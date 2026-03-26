@@ -2,7 +2,33 @@
   "permissions": {
     "allow": [
       "Bash(ollama list:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(git:*)",
+      "Bash(tree:*)",
+      "Bash(du:*)",
+      "Bash(.venv/Scripts/python.exe -m pip list 2>&1)",
+      "Bash(.venv/Scripts/python.exe tests/eval_rag.py 2>&1)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_ingestion.py -v 2>&1)",
+      "Bash(.venv/Scripts/python.exe tests/eval_rag.py --embed bge 2>&1 && .venv/Scripts/python.exe tests/eval_rag.py --top-k 5 2>&1)",
+      "Bash(.venv/Scripts/python.exe tests/eval_rag.py 2>&1 && .venv/Scripts/python.exe -m pytest tests/test_ingestion.py -v --tb=short 2>&1)",
+      "Bash(.venv/Scripts/python.exe -c \"\nfrom src.ingestion.pipeline import retrieve\ntests = [\n    \\('What is photosynthesis?', 'out of scope'\\),\n    \\('What is a derivative?', 'in scope'\\),\n    \\('How do I find the slope at a point?', 'in scope'\\),\n    \\('What is the French Revolution?', 'out of scope'\\),\n    \\('What is integration?', 'in scope'\\),\n    \\('Who is Albert Einstein?', 'out of scope'\\),\n]\nfor q, label in tests:\n    results = retrieve\\(q, 'data/index', 'CalculusMadeEasy', top_k=3\\)\n    dists = [round\\(d, 3\\) for _, d in results]\n    print\\(f'[{label}] {q}'\\)\n    print\\(f'  distances: {dists}  min={min\\(dists\\):.3f}'\\)\n\" 2>&1)",
+      "Bash(.venv/Scripts/python.exe -c \"\nfrom src.rag.query import ask\n\nhistory = []\n\nprint\\('--- Test 1: out of scope ---'\\)\nresp, history = ask\\('What is photosynthesis?', 'CalculusMadeEasy', history=history\\)\n\nprint\\(\\)\nprint\\('--- Test 2: in scope ---'\\)\nresp, history = ask\\('What is a derivative?', 'CalculusMadeEasy', history=history\\)\n\" 2>&1)",
+      "Bash(find:*)",
+      "Bash(for file:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/Dell/Projects/edge-tutor/**)",
+      "Bash(done)",
+      "Bash(.venv/Scripts/pip install:*)",
+      "Bash(.venv/Scripts/python scripts/export_onnx.py 2>&1)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_query.py -v 2>&1)",
+      "WebFetch",
+      "WebSearch",
+      "Bash(.venv/Scripts/python.exe -m pip freeze 2>&1)",
+      "Read(//c/tmp/**)",
+      "Bash(cp /c/Users/Dell/.gradle/caches/modules-2/files-2.1/com.llamatik/library-android/0.11.0/f3216fb3025ebb31b29350a19a72176447a7c061/library-release.aar llamatik.zip)",
+      "Bash(unzip -p llamatik.zip classes.jar)",
+      "Bash(jar tf:*)",
+      "Bash(python3:*)"
     ]
   }
 }
