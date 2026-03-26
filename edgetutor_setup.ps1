@@ -33,7 +33,7 @@ function Warn    { param($m) Write-Host "[warn]  $m" -ForegroundColor Yellow  }
 function Die     { param($m) Write-Host "[error] $m" -ForegroundColor Red; exit 1 }
 
 # ---------------------------------------------------------------------------
-# Helper: write a file, creating parent directories as needed
+# Helpers: write files, creating parent directories as needed
 # ---------------------------------------------------------------------------
 function Write-ProjectFile {
     param([string]$Path, [string]$Content)
@@ -41,6 +41,17 @@ function Write-ProjectFile {
     if ($dir -and !(Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     # Use UTF-8 without BOM — Python is sensitive to BOM in source files
     [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
+# Use this for Python source files — skips writing if the file already exists
+# so that manual improvements made after initial setup are never overwritten.
+function Write-SourceFile {
+    param([string]$Path, [string]$Content)
+    if (Test-Path $Path) {
+        Warn "Skipping $Path (already exists — delete it manually to regenerate)"
+        return
+    }
+    Write-ProjectFile $Path $Content
 }
 
 # ===========================================================================
@@ -107,16 +118,16 @@ function Phase1 {
     Ok "Phase 1 packages installed"
 
     # Write requirements
-    & $venvPython -m pip freeze | Out-File "$ProjectDir\requirements-phase1.txt" -Encoding utf8
-    Ok "requirements-phase1.txt written"
+    & $venvPython -m pip freeze | Out-File "$ProjectDir\requirements.txt" -Encoding utf8
+    Ok "requirements.txt written"
 
     # ------------------------------------------------------------------
     # Source files
     # ------------------------------------------------------------------
-    Write-ProjectFile "$ProjectDir\src\__init__.py" ""
-    Write-ProjectFile "$ProjectDir\src\ingestion\__init__.py" '"""EdgeTutor ingestion pipeline — Phase 1."""'
+    Write-SourceFile "$ProjectDir\src\__init__.py" ""
+    Write-SourceFile "$ProjectDir\src\ingestion\__init__.py" '"""EdgeTutor ingestion pipeline — Phase 1."""'
 
-    Write-ProjectFile "$ProjectDir\src\ingestion\pipeline.py" @'
+    Write-SourceFile "$ProjectDir\src\ingestion\pipeline.py" @'
 """
 Parse -> clean -> chunk -> embed -> FAISS index.
 Entry point: ingest(pdf_path, index_dir)
@@ -301,9 +312,9 @@ def retrieve(query: str, index_dir: str, doc_name: str, top_k: int = 3):
     return [(chunks[i], float(distances[0][j])) for j, i in enumerate(idxs[0])]
 '@
 
-    Write-ProjectFile "$ProjectDir\tests\__init__.py" ""
+    Write-SourceFile "$ProjectDir\tests\__init__.py" ""
 
-    Write-ProjectFile "$ProjectDir\tests\test_ingestion.py" @'
+    Write-SourceFile "$ProjectDir\tests\test_ingestion.py" @'
 """
 Phase 1 exit criterion: top-3 retrieval precision > 70% on a test set.
 Run:  pytest tests/ -v
@@ -369,8 +380,8 @@ function Phase2 {
     if ($LASTEXITCODE -ne 0) { Die "pip install failed — see errors above" }
     Ok "Phase 2 packages installed"
 
-    & $venvPython -m pip freeze | Out-File "$ProjectDir\requirements-phase2.txt" -Encoding utf8
-    Ok "requirements-phase2.txt written"
+    & $venvPython -m pip freeze | Out-File "$ProjectDir\requirements.txt" -Encoding utf8
+    Ok "requirements.txt updated"
 
     # Pull model via Ollama
     Info "Pulling Qwen2.5-0.5B via Ollama (~400 MB — may take a few minutes)..."
@@ -383,92 +394,242 @@ function Phase2 {
     }
 
     # RAG source files
-    Write-ProjectFile "$ProjectDir\src\rag\__init__.py" '"""EdgeTutor RAG pipeline — Phase 2."""'
+    Write-SourceFile "$ProjectDir\src\rag\__init__.py" '"""EdgeTutor RAG pipeline — Phase 2."""'
 
-    Write-ProjectFile "$ProjectDir\src\rag\query.py" @'
+    Write-SourceFile "$ProjectDir\src\rag\query.py" @'
 """
-Retrieval-Augmented Generation — query pipeline.
-Entry point: ask(question, doc_name, index_dir)
+RAG query pipeline.
+Entry points:
+  ask(question, doc_name)  -> streams answer to stdout, returns full text
+  retrieve_chunks(question, doc_name, top_k) -> list of chunk strings
 """
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
+import re
+import time
 import ollama
-from src.ingestion.pipeline import retrieve
+
+from src.ingestion.pipeline import retrieve, get_embed_model, EMBED_MODEL as DEFAULT_EMBED_MODEL
 
 # ------------------------------------------------------------------
-# Config (tune during Week 3-4 testing)
+# Config
 # ------------------------------------------------------------------
-OLLAMA_MODEL = "qwen2.5:0.5b"
-TOP_K        = 3   # spec: 3-5
+LLM_MODEL            = "qwen2.5:0.5b"
+INDEX_DIR            = "data/index"
+TOP_K                = 3
+MAX_RELEVANT_DISTANCE = 1.4   # L2 threshold; queries above this aren't in the document
+MIN_LEXICAL_OVERLAP  = 2      # content-word matches required between question and any chunk
 
-SYSTEM_PROMPT = """\
-You are Edge-Tutor, an offline AI tutor for engineering students.
-You only answer questions based on the context passages provided.
-If the context does not contain enough information to answer, say so clearly.
-Guide the student with hints and step-by-step reasoning rather than just
-giving the final answer. Keep responses concise and focused."""
+SYSTEM_PROMPT = "Be concise."
+
+_STOPWORDS = frozenset(
+    "a an the is are was were be been being have has had do does did "
+    "will would could should may might shall can i you he she it we they "
+    "what how why when where who which this that these those of in on at "
+    "to for with by from about into than or and but if not no so".split()
+)
 
 
-def build_prompt(question: str, chunks_with_scores: list) -> str:
-    context_blocks = "\n---\n".join(c for c, _ in chunks_with_scores)
-    return f"Context:\n{context_blocks}\n\nStudent question: {question}"
+# ------------------------------------------------------------------
+# Retrieve
+# ------------------------------------------------------------------
+def retrieve_chunks(question: str, doc_name: str, top_k: int = TOP_K, embed_model: str = DEFAULT_EMBED_MODEL, verbose: bool = False):
+    """Return (chunks, min_distance) for a question."""
+    if verbose:
+        t0 = time.perf_counter()
+        print(f"\n[embed]     encoding question...", flush=True)
+    results = retrieve(question, INDEX_DIR, doc_name, top_k=top_k, model_name=embed_model)
+    if verbose:
+        elapsed = time.perf_counter() - t0
+        print(f"[retrieve]  got {len(results)} chunks  ({elapsed:.3f}s)")
+        for i, (chunk, dist) in enumerate(results, 1):
+            preview = chunk[:80].replace("\n", " ")
+            print(f"[retrieve]  chunk {i} (dist={dist:.3f}): {preview!r}")
+    chunks = [chunk for chunk, _dist in results]
+    min_dist = min(dist for _chunk, dist in results)
+    return chunks, min_dist
 
 
-def ask(question: str, doc_name: str, index_dir: str = "data/index",
-        stream: bool = True) -> str:
-    """Full RAG pipeline: embed -> retrieve -> generate."""
-    chunks_with_scores = retrieve(question, index_dir, doc_name, top_k=TOP_K)
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+def _has_lexical_overlap(question: str, chunks: list[str]) -> bool:
+    q_tokens = {w for w in re.findall(r"[a-z]+", question.lower()) if w not in _STOPWORDS}
+    # Require fewer matches when the question itself has few content words
+    required = min(MIN_LEXICAL_OVERLAP, max(1, len(q_tokens)))
+    for chunk in chunks:
+        chunk_tokens = set(re.findall(r"[a-z]+", chunk.lower()))
+        if len(q_tokens & chunk_tokens) >= required:
+            return True
+    return False
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user",   "content": build_prompt(question, chunks_with_scores)},
-    ]
+
+_CONTINUATION = re.compile(
+    r"^(continue|go on|keep going|more|next|and\??|ok|okay|yes|sure|please)\.?$",
+    re.IGNORECASE,
+)
+
+def _is_followup(text: str) -> bool:
+    """True for short inputs that continue the conversation rather than ask something new."""
+    stripped = text.strip()
+    return bool(_CONTINUATION.match(stripped)) or len(stripped.split()) <= 2
+
+
+# ------------------------------------------------------------------
+# Prompt builder
+# ------------------------------------------------------------------
+def _build_prompt(question: str, chunks: list[str]) -> str:
+    context = "\n\n---\n\n".join(
+        f"[Passage {i+1}]\n{chunk}" for i, chunk in enumerate(chunks)
+    )
+    return (
+        f"Context passages from the document:\n\n"
+        f"{context}\n\n"
+        f"Answer using ONLY the passages above.\n"
+        f"Question: {question}"
+    )
+
+
+# ------------------------------------------------------------------
+# Generate (streaming)
+# ------------------------------------------------------------------
+def ask(
+    question: str,
+    doc_name: str,
+    history: list[dict] | None = None,
+    stream: bool = True,
+    embed_model: str = DEFAULT_EMBED_MODEL,
+    verbose: bool = False,
+    llm_model: str = LLM_MODEL,
+) -> tuple[str, list[dict]]:
+    """
+    Retrieve relevant chunks and generate an answer via Ollama.
+    Streams tokens to stdout if stream=True.
+
+    history: list of {"role": ..., "content": ...} dicts from prior turns.
+             Pass None or [] to start a fresh conversation.
+
+    Returns (response_text, updated_history).
+    """
+    history = list(history or [])
+
+    if _is_followup(question) and history:
+        # Continuation: don't re-retrieve; just append the bare question
+        history.append({"role": "user", "content": question})
+    else:
+        chunks, min_dist = retrieve_chunks(question, doc_name, embed_model=embed_model, verbose=verbose)
+        out_of_scope = (
+            min_dist > MAX_RELEVANT_DISTANCE
+            or not _has_lexical_overlap(question, chunks)
+        )
+        if verbose:
+            print(f"[gate]      lexical_ok={_has_lexical_overlap(question, chunks)}  min_dist={min_dist:.3f}  threshold={MAX_RELEVANT_DISTANCE}", flush=True)
+        if out_of_scope:
+            response = "Not covered in this document."
+            if stream:
+                print(response)
+            history.append({"role": "user",      "content": question})
+            history.append({"role": "assistant",  "content": response})
+            return response, history
+        prompt = _build_prompt(question, chunks)
+        history.append({"role": "user", "content": prompt})
+
+    if verbose:
+        print(f"[llm]       sending to {llm_model}...", flush=True)
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+
+    response_text = ""
+    stream_iter = ollama.chat(
+        model=llm_model,
+        messages=messages,
+        stream=True,
+        options={"temperature": 0.3, "num_predict": 450},
+    )
+
+    for chunk in stream_iter:
+        token = (chunk.get("message", {}).get("content") if isinstance(chunk, dict) else chunk.message.content) or ""
+        response_text += token
+        if stream:
+            print(token, end="", flush=True)
 
     if stream:
-        response_text = ""
-        print("\nEdge-Tutor: ", end="", flush=True)
-        for chunk in ollama.chat(model=OLLAMA_MODEL, messages=messages, stream=True):
-            token = chunk["message"]["content"]
-            print(token, end="", flush=True)
-            response_text += token
-        print()
-        return response_text
-    else:
-        response = ollama.chat(model=OLLAMA_MODEL, messages=messages)
-        return response["message"]["content"]
+        print()  # newline after streamed output
+
+    history.append({"role": "assistant", "content": response_text})
+    return response_text, history
 '@
 
-    Write-ProjectFile "$ProjectDir\src\rag\repl.py" @'
+    Write-SourceFile "$ProjectDir\src\rag\repl.py" @'
 """
-Quick REPL for Phase 2 manual testing.
-Usage: python -m src.rag.repl --doc <doc_name_without_extension>
+Interactive REPL for testing the RAG pipeline.
+Usage:
+    python -m src.rag.repl <doc_name> [-e minilm|bge|arctic] [-m MODEL] [-v]
 """
-import sys
 import argparse
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from src.rag.query import ask, LLM_MODEL
 
-from src.rag.query import ask
+EMBED_MODELS = {
+    "minilm": "all-MiniLM-L6-v2",
+    "bge":    "TaylorAI/bge-micro-v2",
+    "arctic": "Snowflake/snowflake-arctic-embed-xs",
+}
+
 
 def main():
-    parser = argparse.ArgumentParser(description="EdgeTutor RAG REPL")
-    parser.add_argument("--doc",       required=True, help="Document name (no extension)")
-    parser.add_argument("--index-dir", default="data/index")
+    parser = argparse.ArgumentParser(description="EdgeTutor interactive REPL")
+    parser.add_argument("doc_name", help="Document name (e.g. CalculusMadeEasy)")
+    parser.add_argument(
+        "-e", "--embedding",
+        choices=["minilm", "bge", "arctic"],
+        default="minilm",
+        help="Embedding model alias. Default: minilm",
+    )
+    parser.add_argument(
+        "-m", "--model",
+        default=None,
+        help=f"Ollama model name (e.g. qwen2.5:0.5b). Default: {LLM_MODEL}",
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        default=False,
+        help="Print retrieval debug info.",
+    )
     args = parser.parse_args()
 
-    print(f"\nEdge-Tutor REPL -- document: {args.doc}")
-    print("Type a question, or 'exit' to quit.\n")
+    embed_model = EMBED_MODELS[args.embedding]
+    llm_model   = args.model or LLM_MODEL
+
+    from src.ingestion.pipeline import get_embed_model
+    get_embed_model(embed_model)
+
+    print(f"EdgeTutor REPL | doc={args.doc_name} | llm={llm_model} | embed={embed_model}")
+    print("Type your question and press Enter. 'new' to reset conversation. Ctrl-C to quit.\n")
+
+    history = []
+
     while True:
         try:
-            q = input("You: ").strip()
-        except (EOFError, KeyboardInterrupt):
+            question = input("You: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nBye!")
             break
-        if q.lower() in ("exit", "quit", "q"):
-            break
-        if q:
-            ask(q, args.doc, args.index_dir)
+
+        if not question:
+            continue
+
+        if question.lower() == "new":
+            history = []
+            print("(Conversation reset)\n")
+            continue
+
+        print("Tutor: ", end="", flush=True)
+        _, history = ask(
+            question, args.doc_name,
+            history=history, embed_model=embed_model,
+            verbose=args.verbose, llm_model=llm_model,
+        )
+        print()
+
 
 if __name__ == "__main__":
     main()
@@ -482,7 +643,7 @@ if __name__ == "__main__":
     Write-Host "  # Ingest a PDF first:"
     Write-Host "  python -c `"from src.ingestion.pipeline import ingest; ingest('data/raw/yourfile.pdf')`""
     Write-Host "  # Then start the REPL:"
-    Write-Host "  python -m src.rag.repl --doc yourfile"
+    Write-Host "  python -m src.rag.repl yourfile"
     Write-Host ""
 }
 
@@ -544,6 +705,7 @@ include(":app")
 plugins {
     id("com.android.application") version "8.5.0" apply false
     id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+    id("com.google.devtools.ksp") version "1.9.24-1.0.20" apply false
 }
 '@
 
@@ -551,6 +713,7 @@ plugins {
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -573,6 +736,8 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    lint { checkReleaseBuilds = false }
 }
 
 dependencies {
@@ -585,22 +750,31 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
 
-    // Room (document metadata)
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
+    // Room — metadata DB for document list
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
 
-    // ONNX Runtime Mobile (embedding model)
+    // ONNX Runtime Mobile — embedding model inference
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 
-    // PDF parsing (on-device)
+    // PDF parsing — on-device text extraction
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 
-    // Llamatik (llama.cpp wrapper) -- check latest coords:
-    // https://github.com/llamatik/llamatik
-    // implementation("io.github.llamatik:llamatik-android:<version>")
+    // Gson — FlatIndex JSON serialisation
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    // Llamatik (llama.cpp wrapper for GGUF models — Qwen2.5-0.5B)
+    // Verify latest version at https://github.com/ferranpons/Llamatik/releases
+    implementation("com.llamatik:library-android:0.11.0")
+
+    // MediaPipe LLM Inference (Google — Gemma 3 270M .task format)
+    // Verify latest version at https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference/android
+    implementation("com.google.mediapipe:tasks-genai:0.10.27")
 }
 '@
 
@@ -626,7 +800,7 @@ dependencies {
 </manifest>
 '@
 
-    Write-ProjectFile "$AndroidDir\app\src\main\java\com\edgetutor\MainActivity.kt" @'
+    Write-SourceFile "$AndroidDir\app\src\main\java\com\edgetutor\MainActivity.kt" @'
 package com.edgetutor
 
 import android.os.Bundle
@@ -667,20 +841,31 @@ fun DefaultPreview() = EdgeTutorApp()
 
 - [ ] Open this folder in Android Studio (File -> Open -> edgetutor-android)
 - [ ] Let Gradle sync and accept SDK licence prompts
-- [ ] Install Llamatik dependency (check latest: https://github.com/llamatik/llamatik)
-- [ ] Download Qwen2.5-0.5B Q4_K_M GGUF -> place in app/src/main/assets/
-- [ ] Download all-MiniLM-L6-v2 ONNX    -> place in app/src/main/assets/
+- [ ] Download model files (see table below) -> place in app/src/main/assets/
+- [ ] Build and run smoke test on a physical device
 
-## Model files needed in assets/
+## LLM engines
 
-| File                                    | Source                                        | Size     |
-|-----------------------------------------|-----------------------------------------------|----------|
-| qwen2.5-0.5b-instruct-q4_k_m.gguf      | HuggingFace: Qwen/Qwen2.5-0.5B-Instruct-GGUF | ~380 MB  |
-| all-MiniLM-L6-v2.onnx                   | HuggingFace: sentence-transformers            | ~22 MB   |
+Two engines are available — pick one (or both for comparison):
 
-## FAISS for Android
-Lightweight alternative recommended for MVP:
-  https://github.com/spotify/voyager  (Java-native, no JNI build required)
+| Engine         | Class             | Model file                          | Size    |
+|----------------|-------------------|-------------------------------------|---------|
+| Llamatik       | LlamaEngine       | qwen2.5-0.5b-instruct-q4_k_m.gguf  | ~350 MB |
+| MediaPipe      | MediaPipeEngine   | gemma-3-270m-it-q4_k_m.task        | ~253 MB |
+
+To switch engines, change one line in ChatViewModel.kt:
+  private val llm: LlmEngine by lazy { MediaPipeEngine(app) }
+
+## All model files needed in assets/
+
+| File                                   | Source                                          | Size    |
+|----------------------------------------|-------------------------------------------------|---------|
+| qwen2.5-0.5b-instruct-q4_k_m.gguf     | HuggingFace: Qwen/Qwen2.5-0.5B-Instruct-GGUF   | ~350 MB |
+| gemma-3-270m-it-q4_k_m.task           | HuggingFace: search "gemma-3-270m LiteRT"       | ~253 MB |
+| minilm.onnx                            | Run: python scripts/export_onnx.py              | ~22 MB  |
+| vocab.txt                              | Run: python scripts/export_onnx.py              | ~226 KB |
+
+Do NOT commit model/ONNX files to git.
 '@
 
     Ok "Android project scaffold written to $AndroidDir"

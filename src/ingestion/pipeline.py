@@ -21,6 +21,12 @@ APPROX_CHARS_PER_TOKEN  = 4     # rough heuristic for splitting
 
 EMBED_MODEL = "all-MiniLM-L6-v2"   # 22M params, ~80 MB, 384-dim
 
+# Per-model query prefix (applied at retrieval time only, not during ingestion).
+# Models not listed here get no prefix.
+QUERY_PREFIXES = {
+    "Snowflake/snowflake-arctic-embed-xs": "Represent this sentence for searching relevant passages: ",
+}
+
 
 # ------------------------------------------------------------------
 # Step 1: Parse
@@ -137,12 +143,17 @@ def save_index(index, chunks: List[str], index_dir: str, doc_name: str):
     )
 
 
+_index_cache = {}
+
 def load_index(index_dir: str, doc_name: str):
-    index  = faiss.read_index(str(Path(index_dir) / f"{doc_name}.faiss"))
-    chunks = np.load(
-        str(Path(index_dir) / f"{doc_name}_chunks.npy"), allow_pickle=True
-    ).tolist()
-    return index, chunks
+    key = (index_dir, doc_name)
+    if key not in _index_cache:
+        index  = faiss.read_index(str(Path(index_dir) / f"{doc_name}.faiss"))
+        chunks = np.load(
+            str(Path(index_dir) / f"{doc_name}_chunks.npy"), allow_pickle=True
+        ).tolist()
+        _index_cache[key] = (index, chunks)
+    return _index_cache[key]
 
 
 # ------------------------------------------------------------------
@@ -173,10 +184,11 @@ def ingest(pdf_path: str, index_dir: str = "data/index") -> dict:
 # ------------------------------------------------------------------
 # Quick retrieval (used in Phase 1 validation)
 # ------------------------------------------------------------------
-def retrieve(query: str, index_dir: str, doc_name: str, top_k: int = 3):
+def retrieve(query: str, index_dir: str, doc_name: str, top_k: int = 3, model_name: str = EMBED_MODEL):
     """Return top-k (chunk, distance) tuples for a query."""
     index, chunks = load_index(index_dir, doc_name)
-    model = get_embed_model()
-    q_vec = model.encode([query], convert_to_numpy=True).astype("float32")
+    model = get_embed_model(model_name)
+    prefix = QUERY_PREFIXES.get(model_name, "")
+    q_vec = model.encode([prefix + query], convert_to_numpy=True).astype("float32")
     distances, idxs = index.search(q_vec, top_k)
     return [(chunks[i], float(distances[0][j])) for j, i in enumerate(idxs[0])]

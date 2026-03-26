@@ -57,3 +57,14 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Large model files — copy manually before build (see todo.md)
+*.gguf
+data/models/
+
+# Android build artifacts & local config
+edgetutor-android/.gradle/
+edgetutor-android/build/
+edgetutor-android/app/build/
+edgetutor-android/local.properties
+edgetutor-android/.idea/
+

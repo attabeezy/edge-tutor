@@ -125,7 +125,7 @@ KNUST-specific course alignment (syllabi, past papers, course codes) is a post-M
 │  │  Top-3 to 5 relevant chunks                          │   │
 │  │       │                                              │   │
 │  │       ▼                                              │   │
-│  │  [chunks + question] → Generative SLM               │   │
+│  │  [chunks + question] → Generative SLM                │   │
 │  │       │                                              │   │
 │  │       ▼                                              │   │
 │  │  Tutoring response (streamed to UI)                  │   │
