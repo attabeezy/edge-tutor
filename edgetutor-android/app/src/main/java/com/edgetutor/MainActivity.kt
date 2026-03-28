@@ -48,10 +48,11 @@ fun EdgeTutorApp(
     ingestVm: IngestViewModel = viewModel(),
     chatVm:   ChatViewModel   = viewModel(),
 ) {
-    val context   = LocalContext.current
-    val documents by ingestVm.documents.collectAsState()
-    val messages  by chatVm.messages.collectAsState()
-    val thinking  by chatVm.isThinking.collectAsState()
+    val context    = LocalContext.current
+    val documents  by ingestVm.documents.collectAsState()
+    val messages   by chatVm.messages.collectAsState()
+    val thinking   by chatVm.isThinking.collectAsState()
+    val warmingUp  by chatVm.isWarmingUp.collectAsState()
 
     var question  by remember { mutableStateOf("") }
     var activeDoc by remember { mutableStateOf<DocumentEntity?>(null) }
@@ -93,8 +94,11 @@ fun EdgeTutorApp(
 
         // ── Chat ──────────────────────────────────────────────────────────
         Text(
-            text  = if (activeDoc != null) "Chat — ${activeDoc!!.displayName}"
-                    else "Select a document above to start chatting",
+            text  = when {
+                activeDoc == null -> "Select a document above to start chatting"
+                warmingUp         -> "Loading model for ${activeDoc!!.displayName}…"
+                else              -> "Chat — ${activeDoc!!.displayName}"
+            },
             style = MaterialTheme.typography.titleMedium,
         )
         Spacer(Modifier.height(4.dp))
@@ -125,12 +129,12 @@ fun EdgeTutorApp(
                 onValueChange = { question = it },
                 label         = { Text("Ask a question") },
                 modifier      = Modifier.weight(1f),
-                enabled       = activeDoc != null && !thinking,
+                enabled       = activeDoc != null && !thinking && !warmingUp,
             )
             Spacer(Modifier.width(8.dp))
             Button(
                 onClick  = { chatVm.ask(question); question = "" },
-                enabled  = question.isNotBlank() && activeDoc != null && !thinking,
+                enabled  = question.isNotBlank() && activeDoc != null && !thinking && !warmingUp,
             ) { Text("Ask") }
         }
     }

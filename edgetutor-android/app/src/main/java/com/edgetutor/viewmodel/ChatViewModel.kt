@@ -28,11 +28,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val embedder: Embedder   by lazy { Embedder(app) }
     private val llm: LlmEngine       by lazy { LlamaEngine(app) }
 
+    init {
+        // Start copying the model asset to internal storage immediately so the file
+        // is ready on disk by the time the user selects a document and warmUp() fires.
+        // On subsequent launches the file already exists and this completes instantly.
+        viewModelScope.launch(Dispatchers.IO) { llm.copyModelIfNeeded() }
+    }
+
     private val _messages    = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages
 
     private val _isThinking  = MutableStateFlow(false)
     val isThinking: StateFlow<Boolean> = _isThinking
+
+    private val _isWarmingUp = MutableStateFlow(false)
+    val isWarmingUp: StateFlow<Boolean> = _isWarmingUp
 
     private var index: FlatIndex?    = null
     var activeDoc: DocumentEntity?   = null
@@ -48,13 +58,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun loadDocument(doc: DocumentEntity) {
         viewModelScope.launch(Dispatchers.IO) {
+            _isWarmingUp.value = true
             val file = File(getApplication<Application>().filesDir, "${doc.id}.idx")
-            if (!file.exists()) return@launch
+            if (!file.exists()) { _isWarmingUp.value = false; return@launch }
             val idx = FlatIndex()
             idx.load(file)
             index     = idx
             activeDoc = doc
             _messages.value = emptyList()
+            llm.warmUp()       // eagerly load LLM weights
+            embedder.embed("") // force ONNX session + tokenizer init; result discarded
+            _isWarmingUp.value = false
         }
     }
 
@@ -72,8 +86,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             // 1. Embed question
             val qVec = embedder.embed(question)
 
-            // 2. Retrieve top-3 chunks
-            val topChunks = idx.search(qVec, k = 3)
+            // 2. Retrieve top-2 chunks (reduced from 3 to cut prefill ~33%)
+            val topChunks = idx.search(qVec, k = 2)
 
             // 3. Build prompt (matches Python src/rag/query.py system prompt)
             val contextText = topChunks.joinToString("\n---\n") { it.text }

@@ -164,9 +164,11 @@ KNUST-specific course alignment (syllabi, past papers, course codes) is a post-M
 - all-MiniLM-L6-v2 is the most proven lightweight embedding model available; well-documented,
   widely deployed.
 
-### 6.2 Fallback Configuration (Ultra-Low-End Devices)
+### 6.2 Fallback Configuration (Ultra-Low-End Devices) — **Currently Implemented**
 
 > **Gemma 3 270M + all-MiniLM-L6-v2**
+
+> **Implementation note:** This configuration was selected as the actual MVP implementation (Phase 3/4). Gemma-3-270M-IT Q4_K_M (~253 MB GGUF) is smaller than the Qwen2.5-0.5B GGUF (~380 MB), giving more headroom on budget devices.
 
 | Component | Model | RAM (4-bit) |
 |---|---|---|

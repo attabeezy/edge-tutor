@@ -13,6 +13,20 @@ package com.edgetutor.llm
 interface LlmEngine : AutoCloseable {
 
     /**
+     * Copy the model asset file to internal storage if it is not already there.
+     * This is the slow I/O phase (~5–15s on first launch) and can be started in the
+     * background at app startup, well before the user selects a document.
+     * Default implementation is a no-op.
+     */
+    suspend fun copyModelIfNeeded() {}
+
+    /**
+     * Pre-load the model into memory so the first [generate] call has no loading overhead.
+     * Safe to call multiple times. Default implementation is a no-op.
+     */
+    suspend fun warmUp() {}
+
+    /**
      * Generate a response for [prompt], calling [onToken] for each new token as it
      * is produced (streaming).
      *

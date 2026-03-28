@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace   = "com.edgetutor"
-    compileSdk  = 35
+    compileSdk  = 36
 
     defaultConfig {
         applicationId = "com.edgetutor"
@@ -48,7 +48,8 @@ dependencies {
     ksp("androidx.room:room-compiler:$roomVersion")
 
     // ONNX Runtime Mobile — embedding model inference
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
+    // 1.22.0+ ships 16 KB page-aligned .so files (required for Google Play / Android 15)
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
 
     // PDF parsing — on-device text extraction
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
@@ -62,9 +63,10 @@ dependencies {
     // Gson — FlatIndex JSON serialisation
     implementation("com.google.code.gson:gson:2.10.1")
 
-    // Llamatik (llama.cpp wrapper for GGUF models — Qwen2.5-0.5B)
+    // Llamatik (llama.cpp wrapper for GGUF models — Gemma 3 270M)
+    // 0.18.0 includes KV-cache support and improved ARM NEON optimizations
     // Verify latest version at https://github.com/ferranpons/Llamatik/releases
-    implementation("com.llamatik:library-android:0.11.0")
+    implementation("com.llamatik:library-android:0.18.0")
 
     // MediaPipe LLM Inference (Google — Gemma 3 270M .task format)
     // Verify latest version at https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference/android
