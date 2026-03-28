@@ -51,15 +51,30 @@ $RECYCLE.BIN/
 
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 .claude/
+CLAUDE.md
+SESSION.md
+todo.md
 .pytest_cache/
 .venv/
 __pycache__/
 *.py[cod]
 *$py.class
 
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
 # Large model files — copy manually before build (see todo.md)
 *.gguf
 data/models/
+data/index/
+data/raw/
+edgetutor-android/app/src/main/assets/*.gguf
+edgetutor-android/app/src/main/assets/*.onnx
+edgetutor-android/app/src/main/assets/*.txt
 
 # Android build artifacts & local config
 edgetutor-android/.gradle/
@@ -67,4 +82,5 @@ edgetutor-android/build/
 edgetutor-android/app/build/
 edgetutor-android/local.properties
 edgetutor-android/.idea/
+notebooks/
 
