@@ -3,10 +3,10 @@ Export Snowflake/snowflake-arctic-embed-xs to ONNX for ONNX Runtime Mobile (Andr
 
 Outputs
 -------
-  data/models/arctic.onnx   -- ONNX model (transformer backbone, opset 14)
-  data/models/vocab.txt     -- WordPiece vocabulary (30k tokens, one per line)
+  models/arctic.onnx   -- ONNX model (transformer backbone, opset 14)
+  models/vocab.txt     -- WordPiece vocabulary (30k tokens, one per line)
 
-Then copies both files to edgetutor-android/app/src/main/assets/ so Gradle
+Then copies both files to android/app/src/main/assets/ so Gradle
 picks them up automatically on the next sync / build.
 
 Requirements
@@ -33,8 +33,8 @@ from transformers import AutoModel, AutoTokenizer
 # Paths
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).parent.parent
-MODELS_DIR = PROJECT_ROOT / "data" / "models"
-ASSETS_DIR = PROJECT_ROOT / "edgetutor-android" / "app" / "src" / "main" / "assets"
+MODELS_DIR = PROJECT_ROOT / "models"
+ASSETS_DIR = PROJECT_ROOT / "android" / "app" / "src" / "main" / "assets"
 ONNX_PATH = MODELS_DIR / "arctic.onnx"
 VOCAB_PATH = MODELS_DIR / "vocab.txt"
 
@@ -124,6 +124,23 @@ size_mb = ONNX_PATH.stat().st_size / 1e6
 print(f"  -> {ONNX_PATH}  ({size_mb:.1f} MB, single file)")
 
 # ---------------------------------------------------------------------------
+# 2b. Quantize to int8 (dynamic quantization — shrinks ~91 MB → ~23 MB)
+# ---------------------------------------------------------------------------
+print("Quantizing to int8 ...")
+try:
+    from onnxruntime.quantization import quantize_dynamic, QuantType
+    _quant_path = ONNX_PATH.parent / "arctic_q8.onnx"
+    quantize_dynamic(str(ONNX_PATH), str(_quant_path), weight_type=QuantType.QInt8)
+    _quant_path.replace(ONNX_PATH)
+    size_mb = ONNX_PATH.stat().st_size / 1e6
+    print(f"  -> {ONNX_PATH}  ({size_mb:.1f} MB, int8 quantized)")
+    print(f"  File size in bytes: {ONNX_PATH.stat().st_size}")
+    print("  NOTE: update ASSET_MODEL_SIZE in Embedder.kt with the bytes value above")
+except ImportError:
+    print("  WARNING: onnxruntime.quantization not available — skipping int8 step.")
+    print("           pip install onnxruntime  to enable it.")
+
+# ---------------------------------------------------------------------------
 # 3. Validate (ONNX vs PyTorch)
 # ---------------------------------------------------------------------------
 print("Validating ONNX output vs PyTorch ...")
@@ -199,5 +216,4 @@ for src in [ONNX_PATH, VOCAB_PATH]:
     print(f"  {src.name} -> {dst}")
 
 print("\nAll done.")
-print("Next: open edgetutor-android in Android Studio and run Gradle sync.")
-print("Note: remove the old minilm.onnx from app/src/main/assets/ if present.")
+print("Next: open android/ in Android Studio and run Gradle sync.")

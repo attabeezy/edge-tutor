@@ -66,8 +66,8 @@ function Phase1 {
     try { $pyver = python --version 2>&1; Ok "Found $pyver" }
     catch { Die "python not found on PATH. Install from https://python.org and re-run." }
 
-    # Project scaffold — lives next to the script
-    $ProjectDir = $PSScriptRoot
+    # Project scaffold — script lives in scripts/, project root is one level up
+    $ProjectDir = Split-Path $PSScriptRoot -Parent
     $dirs = @(
         "$ProjectDir\data\raw",
         "$ProjectDir\data\index",
@@ -366,7 +366,7 @@ function Phase2 {
 
     Info "=== Phase 2: Full RAG pipeline ==="
 
-    $ProjectDir   = $PSScriptRoot
+    $ProjectDir   = Split-Path $PSScriptRoot -Parent
     $venvPython   = "$ProjectDir\.venv\Scripts\python.exe"
     $venvActivate = "$ProjectDir\.venv\Scripts\Activate.ps1"
     & $venvActivate
@@ -676,7 +676,7 @@ function Phase3 {
     Write-Host ""
 
     # Android project scaffold
-    $AndroidDir = Join-Path $PSScriptRoot "edgetutor-android"
+    $AndroidDir = Join-Path (Split-Path $PSScriptRoot -Parent) "android"
     $androidDirs = @(
         "$AndroidDir\app\src\main\java\com\edgetutor",
         "$AndroidDir\app\src\main\assets",
@@ -839,7 +839,7 @@ fun DefaultPreview() = EdgeTutorApp()
 
 ## Phase 3 checklist
 
-- [ ] Open this folder in Android Studio (File -> Open -> edgetutor-android)
+- [ ] Open this folder in Android Studio (File -> Open -> android)
 - [ ] Let Gradle sync and accept SDK licence prompts
 - [ ] Download model files (see table below) -> place in app/src/main/assets/
 - [ ] Build and run smoke test on a physical device
