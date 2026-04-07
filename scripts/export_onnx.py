@@ -1,9 +1,9 @@
 """
-Export all-MiniLM-L6-v2 to ONNX for ONNX Runtime Mobile (Android).
+Export Snowflake/snowflake-arctic-embed-xs to ONNX for ONNX Runtime Mobile (Android).
 
 Outputs
 -------
-  data/models/minilm.onnx   -- ONNX model (transformer backbone, opset 12)
+  data/models/arctic.onnx   -- ONNX model (transformer backbone, opset 14)
   data/models/vocab.txt     -- WordPiece vocabulary (30k tokens, one per line)
 
 Then copies both files to edgetutor-android/app/src/main/assets/ so Gradle
@@ -35,10 +35,10 @@ from transformers import AutoModel, AutoTokenizer
 PROJECT_ROOT = Path(__file__).parent.parent
 MODELS_DIR = PROJECT_ROOT / "data" / "models"
 ASSETS_DIR = PROJECT_ROOT / "edgetutor-android" / "app" / "src" / "main" / "assets"
-ONNX_PATH = MODELS_DIR / "minilm.onnx"
+ONNX_PATH = MODELS_DIR / "arctic.onnx"
 VOCAB_PATH = MODELS_DIR / "vocab.txt"
 
-MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL_ID = "Snowflake/snowflake-arctic-embed-xs"
 MAX_LEN = 128
 
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -49,13 +49,38 @@ ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 # ---------------------------------------------------------------------------
 print(f"Loading {MODEL_ID} ...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-model = AutoModel.from_pretrained(MODEL_ID)
+_base_model = AutoModel.from_pretrained(MODEL_ID)
+_base_model.eval()
+
+
+class _BertWrapper(torch.nn.Module):
+    """Thin wrapper so torch.onnx.export receives explicit keyword args.
+
+    Newer transformers BertModel.forward() raises 'multiple values for
+    argument use_cache' when positional args are passed during JIT tracing.
+    Passing kwargs fixes it and also makes the ONNX graph output a plain
+    tensor rather than a ModelOutput object.
+    """
+
+    def __init__(self, bert):
+        super().__init__()
+        self.bert = bert
+
+    def forward(self, input_ids, attention_mask, token_type_ids):
+        return self.bert(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+        ).last_hidden_state
+
+
+model = _BertWrapper(_base_model)
 model.eval()
 
 # ---------------------------------------------------------------------------
 # 2. Export
 # ---------------------------------------------------------------------------
-print("Exporting to ONNX (opset 12) ...")
+print("Exporting to ONNX (opset 14) ...")
 dummy = tokenizer(
     "What is a derivative?",
     return_tensors="pt",
@@ -81,10 +106,22 @@ torch.onnx.export(
     },
     opset_version=14,
     do_constant_folding=True,
-    dynamo=False,           # force legacy TorchScript exporter (avoids emoji/cp1252 crash on Windows)
+    dynamo=False,   # use legacy exporter — avoids verbose Unicode logging that breaks on Windows cp1252
 )
+
+# Force single-file ONNX — inline all weights so Android ORT can load from bytes.
+# torch.onnx.export may produce a separate .data sidecar; ORT Android cannot resolve
+# relative sidecar paths when the model is loaded via createSession(byteArray, opts).
+import onnx as _onnx
+print("Inlining weights into single file ...")
+_model = _onnx.load(str(ONNX_PATH))          # resolves any sidecar relative to MODELS_DIR
+_onnx.save_model(_model, str(ONNX_PATH), save_as_external_data=False)
+for _sidecar in MODELS_DIR.glob("*.data"):   # remove any leftover .data files
+    _sidecar.unlink()
+    print(f"  Removed sidecar: {_sidecar.name}")
+
 size_mb = ONNX_PATH.stat().st_size / 1e6
-print(f"  -> {ONNX_PATH}  ({size_mb:.1f} MB)")
+print(f"  -> {ONNX_PATH}  ({size_mb:.1f} MB, single file)")
 
 # ---------------------------------------------------------------------------
 # 3. Validate (ONNX vs PyTorch)
@@ -105,7 +142,7 @@ else:
     ort_hidden = sess.run(None, feeds)[0]
 
     with torch.no_grad():
-        pt_hidden = model(**dummy).last_hidden_state.numpy()
+        pt_hidden = _base_model(**dummy).last_hidden_state.numpy()
 
     max_diff = float(np.abs(ort_hidden - pt_hidden).max())
     print(f"  Max abs diff: {max_diff:.2e}", end="  ")
@@ -163,3 +200,4 @@ for src in [ONNX_PATH, VOCAB_PATH]:
 
 print("\nAll done.")
 print("Next: open edgetutor-android in Android Studio and run Gradle sync.")
+print("Note: remove the old minilm.onnx from app/src/main/assets/ if present.")

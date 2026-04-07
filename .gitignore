@@ -52,8 +52,7 @@ $RECYCLE.BIN/
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 .claude/
 CLAUDE.md
-SESSION.md
-todo.md
+PROJECT.md
 .pytest_cache/
 .venv/
 __pycache__/
@@ -67,20 +66,36 @@ Thumbs.db
 # Logs
 *.log
 
-# Large model files — copy manually before build (see todo.md)
+# Large model files — copy manually before build (see android/README.md)
 *.gguf
-data/models/
+models/
 data/index/
 data/raw/
-edgetutor-android/app/src/main/assets/*.gguf
-edgetutor-android/app/src/main/assets/*.onnx
-edgetutor-android/app/src/main/assets/*.txt
+android/app/src/main/assets/*.gguf
+android/app/src/main/assets/*.onnx
+android/app/src/main/assets/*.txt
+android-ltk/app/src/main/assets/*.gguf
+android-ltk/app/src/main/assets/*.onnx
+android-ltk/app/src/main/assets/*.txt
+android-mlc/app/src/main/assets/*.gguf
+android-mlc/app/src/main/assets/*.onnx
+android-mlc/app/src/main/assets/*.txt
 
 # Android build artifacts & local config
-edgetutor-android/.gradle/
-edgetutor-android/build/
-edgetutor-android/app/build/
-edgetutor-android/local.properties
-edgetutor-android/.idea/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android-ltk/.gradle/
+android-ltk/build/
+android-ltk/app/build/
+android-ltk/local.properties
+android-ltk/.idea/
+android-mlc/.gradle/
+android-mlc/build/
+android-mlc/app/build/
+android-mlc/local.properties
+android-mlc/.idea/
+android-mlc/dist/
 notebooks/
-

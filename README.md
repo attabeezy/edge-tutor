@@ -6,8 +6,8 @@ An offline RAG (Retrieval-Augmented Generation) tutoring assistant for Android. 
 
 - **100% Offline** — Runs entirely on-device with zero network dependency
 - **PDF/TXT Ingestion** — Upload textbooks, get AI-powered answers
-- **Lightweight Models** — Optimized for ~1 GB RAM Android devices
-- **Gemma-3-270M** — Efficient quantized SLM for natural responses
+- **Lightweight Models** — Optimized for ~1 GB free RAM Android devices
+- **Qwen3-0.6B** — Quantized SLM for on-device inference via llama.cpp
 
 ## Project Structure
 
@@ -16,11 +16,12 @@ edge-tutor/
 ├── src/                    # Python MVP prototype
 │   ├── ingestion/          # PDF parsing + chunking + embedding
 │   └── rag/                # Query pipeline + REPL
-├── tests/                  # Unit tests
 ├── scripts/                # Utility scripts (ONNX export)
-├── data/                   # Raw PDFs, indices, models
-├── edgetutor-android/      # Android app (Kotlin/Jetpack Compose)
-└── EdgeTutor_MVP_Unified.md # Full specification
+├── tests/                  # Python unit tests + retrieval eval
+├── models/                 # Shared model files (git-ignored — copy manually)
+├── data/                   # Python runtime: raw PDFs and FAISS indices
+├── android/                # Android app (Kotlin/Jetpack Compose)
+└── PROJECT.md              # Specification, status, and roadmap
 ```
 
 ## Quick Start
@@ -40,13 +41,39 @@ python -m src.rag.repl MyBook
 
 ### Android App
 
-See `edgetutor-android/README.md` for building the Android app.
+See `android/README.md` for build instructions and required model files.
 
 ## Requirements
 
 - Python 3.10+
 - Android Studio (for Android app)
 - Ollama (optional, for Python REPL testing)
+
+## GitHub prep (Windows + Android build outputs)
+
+If you hit `Filename too long` while staging or pushing, apply these once:
+
+```bash
+git config --global core.longpaths true
+```
+
+Then keep your clone path short (example: `C:\src\edge-tutor`) and avoid committing generated Android outputs.
+This repository intentionally ignores generated/build artifacts for:
+
+- `android-ltk/`
+- `android-mlc/`
+
+If build artifacts were already staged, unstage them before committing:
+
+```bash
+git restore --staged android-ltk/app/build android-mlc/app/build
+```
+
+Run the repo hygiene guardrail before pushing (or wire it into CI):
+
+```bash
+pwsh -File scripts/check_repo_hygiene.ps1
+```
 
 ## License
 
