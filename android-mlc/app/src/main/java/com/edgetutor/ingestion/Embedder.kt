@@ -29,7 +29,7 @@ class Embedder(context: Context) : AutoCloseable {
     companion object {
         private const val QUERY_PREFIX =
             "Represent this sentence for searching relevant passages: "
-        private const val ASSET_MODEL_SIZE = 90395016L  // arctic.onnx size in bytes
+        private const val ASSET_MODEL_SIZE = 22891703L  // arctic.onnx size in bytes (int8 quantized)
     }
 
     init {

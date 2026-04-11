@@ -20,7 +20,8 @@ edge-tutor/
 ├── tests/                  # Python unit tests + retrieval eval
 ├── models/                 # Shared model files (git-ignored — copy manually)
 ├── data/                   # Python runtime: raw PDFs and FAISS indices
-├── android/                # Android app (Kotlin/Jetpack Compose)
+├── android-ltk/            # Android app - Llamatik/llama.cpp backend (primary)
+├── android-mlc/            # Android app - MLC-LLM/GPU backend (alternative)
 └── PROJECT.md              # Specification, status, and roadmap
 ```
 
@@ -41,7 +42,8 @@ python -m src.rag.repl MyBook
 
 ### Android App
 
-See `android/README.md` for build instructions and required model files.
+See `android-ltk/README.md` for build instructions (Llamatik/llama.cpp backend, primary).  
+See `android-mlc/README.md` for GPU-accelerated variant (MLC-LLM, requires setup).
 
 ## Requirements
 

@@ -106,7 +106,7 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
 
                         val vectors = embedder.embedBatch(batch.map { it.text })
                         batch.forEachIndexed { i, chunk ->
-                            index!!.append(FlatIndex.Entry((globalChunkIdx + chunk.index).toLong(), chunk.text, vectors[i]))
+                            requireNotNull(index).append(FlatIndex.Entry((globalChunkIdx + chunk.index).toLong(), chunk.text, vectors[i]))
                         }
                     }
 

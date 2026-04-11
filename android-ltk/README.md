@@ -9,8 +9,8 @@ Kotlin/Jetpack Compose app — offline RAG tutoring assistant for Android.
 
 ## Build
 
-1. Open `android/` in Android Studio (File → Open)
-2. Copy model files into `android/app/src/main/assets/` (see table below)
+1. Open `android-ltk/` in Android Studio (File → Open)
+2. Copy model files into `android-ltk/app/src/main/assets/` (see table below)
 3. Gradle sync → Run on device
 
 ## Model files required in `assets/`
@@ -19,7 +19,7 @@ Not tracked in git — store working copies in `models/` at the repo root and co
 
 | File | Source | Size |
 |---|---|---|
-| `Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` | HuggingFace: `bartowski/Qwen2.5-0.5B-Instruct-GGUF` | ~350 MB |
+| `qwen2.5-0.5b-instruct-q4_k_m.gguf` | HuggingFace: `bartowski/Qwen2.5-0.5B-Instruct-GGUF` | ~350 MB |
 | `arctic.onnx` | Run `python scripts/export_onnx.py` | ~23 MB (int8) |
 | `vocab.txt` | Same export script | ~226 KB |
 
@@ -43,7 +43,7 @@ hf download bartowski/Qwen2.5-0.5B-Instruct-GGUF Qwen2.5-0.5B-Instruct-Q4_K_M.gg
 - Class: `com.llamatik.library.platform.LlamaBridge` (singleton object)
 - Streaming: `LlamaBridge.generateStream(prompt, object : GenStream { ... })`
 - Callbacks: `onDelta(text)`, `onComplete()`, `onError(message)` — no lambda overload
-- Context reset: `LlamaBridge.sessionReset()` — call after each generation to prevent KV cache accumulation
+- Context reset: `LlamaBridge.sessionReset()` — documented but native JNI implementation is missing in 0.18.0 (`UnsatisfiedLinkError`); do NOT call it
 
 ## Known issues
 

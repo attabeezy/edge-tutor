@@ -34,7 +34,10 @@ from transformers import AutoModel, AutoTokenizer
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
-ASSETS_DIR = PROJECT_ROOT / "android" / "app" / "src" / "main" / "assets"
+ASSETS_DIRS = [
+    PROJECT_ROOT / "android-ltk" / "app" / "src" / "main" / "assets",
+    PROJECT_ROOT / "android-mlc" / "app" / "src" / "main" / "assets",
+]
 ONNX_PATH = MODELS_DIR / "arctic.onnx"
 VOCAB_PATH = MODELS_DIR / "vocab.txt"
 
@@ -42,7 +45,8 @@ MODEL_ID = "Snowflake/snowflake-arctic-embed-xs"
 MAX_LEN = 128
 
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
-ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+for assets_dir in ASSETS_DIRS:
+    assets_dir.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # 1. Load
@@ -99,24 +103,25 @@ torch.onnx.export(
     input_names=["input_ids", "attention_mask", "token_type_ids"],
     output_names=["last_hidden_state"],
     dynamic_axes={
-        "input_ids":        {0: "batch", 1: "seq"},
-        "attention_mask":   {0: "batch", 1: "seq"},
-        "token_type_ids":   {0: "batch", 1: "seq"},
-        "last_hidden_state":{0: "batch", 1: "seq"},
+        "input_ids": {0: "batch", 1: "seq"},
+        "attention_mask": {0: "batch", 1: "seq"},
+        "token_type_ids": {0: "batch", 1: "seq"},
+        "last_hidden_state": {0: "batch", 1: "seq"},
     },
     opset_version=14,
     do_constant_folding=True,
-    dynamo=False,   # use legacy exporter — avoids verbose Unicode logging that breaks on Windows cp1252
+    dynamo=False,  # use legacy exporter — avoids verbose Unicode logging that breaks on Windows cp1252
 )
 
 # Force single-file ONNX — inline all weights so Android ORT can load from bytes.
 # torch.onnx.export may produce a separate .data sidecar; ORT Android cannot resolve
 # relative sidecar paths when the model is loaded via createSession(byteArray, opts).
 import onnx as _onnx
+
 print("Inlining weights into single file ...")
-_model = _onnx.load(str(ONNX_PATH))          # resolves any sidecar relative to MODELS_DIR
+_model = _onnx.load(str(ONNX_PATH))  # resolves any sidecar relative to MODELS_DIR
 _onnx.save_model(_model, str(ONNX_PATH), save_as_external_data=False)
-for _sidecar in MODELS_DIR.glob("*.data"):   # remove any leftover .data files
+for _sidecar in MODELS_DIR.glob("*.data"):  # remove any leftover .data files
     _sidecar.unlink()
     print(f"  Removed sidecar: {_sidecar.name}")
 
@@ -129,6 +134,7 @@ print(f"  -> {ONNX_PATH}  ({size_mb:.1f} MB, single file)")
 print("Quantizing to int8 ...")
 try:
     from onnxruntime.quantization import quantize_dynamic, QuantType
+
     _quant_path = ONNX_PATH.parent / "arctic_q8.onnx"
     quantize_dynamic(str(ONNX_PATH), str(_quant_path), weight_type=QuantType.QInt8)
     _quant_path.replace(ONNX_PATH)
@@ -152,7 +158,7 @@ except ImportError:
 else:
     sess = ort.InferenceSession(str(ONNX_PATH), providers=["CPUExecutionProvider"])
     feeds = {
-        "input_ids":      input_ids.numpy(),
+        "input_ids": input_ids.numpy(),
         "attention_mask": attention_mask.numpy(),
         "token_type_ids": token_type_ids.numpy(),
     }
@@ -185,15 +191,24 @@ else:
         truncation=True,
         max_length=MAX_LEN,
     )
-    ort_h2 = sess.run(None, {
-        "input_ids":      enc2["input_ids"].numpy(),
-        "attention_mask": enc2["attention_mask"].numpy(),
-        "token_type_ids": enc2.get("token_type_ids", torch.zeros_like(enc2["input_ids"])).numpy(),
-    })[0]
+    ort_h2 = sess.run(
+        None,
+        {
+            "input_ids": enc2["input_ids"].numpy(),
+            "attention_mask": enc2["attention_mask"].numpy(),
+            "token_type_ids": enc2.get(
+                "token_type_ids", torch.zeros_like(enc2["input_ids"])
+            ).numpy(),
+        },
+    )[0]
     embs = mean_pool_norm(ort_h2, enc2["attention_mask"].numpy())
     sims = embs @ embs.T
-    print(f"  Cosine sim (calculus-chainrule)={sims[0,1]:.3f}  (calculus-france)={sims[0,2]:.3f}")
-    assert sims[0, 1] > sims[0, 2], "Semantic sanity check failed — related sentences should score higher"
+    print(
+        f"  Cosine sim (calculus-chainrule)={sims[0, 1]:.3f}  (calculus-france)={sims[0, 2]:.3f}"
+    )
+    assert sims[0, 1] > sims[0, 2], (
+        "Semantic sanity check failed — related sentences should score higher"
+    )
     print("  Semantic sanity check OK")
 
 # ---------------------------------------------------------------------------
@@ -210,10 +225,11 @@ print(f"  -> {VOCAB_PATH}  ({len(sorted_vocab)} tokens)")
 # 5. Copy to Android assets
 # ---------------------------------------------------------------------------
 print("Copying to Android assets ...")
-for src in [ONNX_PATH, VOCAB_PATH]:
-    dst = ASSETS_DIR / src.name
-    shutil.copy2(src, dst)
-    print(f"  {src.name} -> {dst}")
+for assets_dir in ASSETS_DIRS:
+    for src in [ONNX_PATH, VOCAB_PATH]:
+        dst = assets_dir / src.name
+        shutil.copy2(src, dst)
+        print(f"  {src.name} -> {dst}")
 
 print("\nAll done.")
-print("Next: open android/ in Android Studio and run Gradle sync.")
+print("Next: open android-ltk/ or android-mlc/ in Android Studio and run Gradle sync.")

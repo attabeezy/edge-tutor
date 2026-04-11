@@ -99,3 +99,14 @@ android-mlc/local.properties
 android-mlc/.idea/
 android-mlc/dist/
 notebooks/
+
+# Python/Linting
+.ruff_cache/
+
+# External dependencies (if not managed via submodules)
+mlc-llm/
+
+# Session/Project tracking docs (if temporary)
+next_steps_gemini.md
+NEXT_STEPS_OPENCODE.md
+BUILD_GUIDE.md

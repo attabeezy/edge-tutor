@@ -8,6 +8,7 @@ import com.edgetutor.ingestion.Embedder
 import com.edgetutor.llm.LlamaEngine
 import com.edgetutor.llm.LlmEngine
 import com.edgetutor.store.FlatIndex
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,8 +26,7 @@ enum class Role { USER, ASSISTANT }
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val embedder: Embedder   by lazy { Embedder(app) }
-    private val llm: LlmEngine       by lazy { LlamaEngine(app) }
+    private val llm: LlmEngine by lazy { LlamaEngine(app) }
 
     init {
         // Start copying the model asset to internal storage immediately so the file
@@ -79,7 +79,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 _isLikelyScanned.value = doc.isLikelyScanned
                 _messages.value  = emptyList()
                 llm.warmUp()      // eagerly load LLM weights
-                embedder.warmUp() // no-op; session already init'd, avoids wasteful inference
                 _isWarmingUp.value = false
             } catch (e: Exception) {
                 _isWarmingUp.value = false
@@ -100,32 +99,38 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             _isThinking.value = true
             _messages.value  += ChatMessage(Role.USER, question)
+            try {
+                // 1. Embed question; close the ORT session immediately after to free ~23 MB
+                //    before the LLM needs its full allocation.
+                val qVec = Embedder(getApplication<Application>()).use { it.embed(question, isQuery = true) }
 
-            // 1. Embed question (query prefix required for Arctic Embed)
-            val qVec = embedder.embed(question, isQuery = true)
+                // 2. Retrieve top-3 chunks
+                val topChunks = idx.search(qVec, k = 3)
 
-            // 2. Retrieve top-3 chunks
-            val topChunks = idx.search(qVec, k = 3)
+                // 3. Build prompt (matches Python src/rag/query.py system prompt)
+                val contextText = topChunks.joinToString("\n---\n") { it.text }
+                val prompt      = buildPrompt(contextText, question)
 
-            // 3. Build prompt (matches Python src/rag/query.py system prompt)
-            val contextText = topChunks.joinToString("\n---\n") { it.text }
-            val prompt      = buildPrompt(contextText, question)
+                // 4. Add a placeholder ASSISTANT message; stream tokens into it
+                _messages.value += ChatMessage(
+                    role    = Role.ASSISTANT,
+                    text    = "",
+                    sources = topChunks.map { it.text.take(120) + "…" },
+                )
 
-            // 4. Add a placeholder ASSISTANT message; stream tokens into it
-            _messages.value += ChatMessage(
-                role    = Role.ASSISTANT,
-                text    = "",
-                sources = topChunks.map { it.text.take(120) + "…" },
-            )
-
-            llm.generate(prompt) { token ->
-                val list    = _messages.value.toMutableList()
-                val last    = list.last()
-                list[list.lastIndex] = last.copy(text = last.text + token)
-                _messages.value = list
+                llm.generate(prompt) { token ->
+                    val list    = _messages.value.toMutableList()
+                    val last    = list.last()
+                    list[list.lastIndex] = last.copy(text = last.text + token)
+                    _messages.value = list
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _errorMessage.value = "Query failed: ${e.message}"
+            } finally {
+                _isThinking.value = false
             }
-
-            _isThinking.value = false
         }
     }
 
@@ -150,7 +155,6 @@ Question: $question
 
     override fun onCleared() {
         super.onCleared()
-        embedder.close()
         llm.close()
     }
 }

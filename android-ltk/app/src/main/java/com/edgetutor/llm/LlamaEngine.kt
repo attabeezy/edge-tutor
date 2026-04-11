@@ -1,12 +1,16 @@
 package com.edgetutor.llm
 
 import android.content.Context
+import android.util.Log
 import com.llamatik.library.platform.GenStream
 import com.llamatik.library.platform.LlamaBridge
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -22,104 +26,123 @@ import kotlin.coroutines.resumeWithException
  */
 class LlamaEngine(private val context: Context) : LlmEngine {
 
-    private var modelLoaded = false
+    private val modelLoaded = AtomicBoolean(false)
+    private val copyMutex   = Mutex()
+    /** Ensures only one native generation runs at a time; released only after onComplete/onError. */
+    private val genMutex    = Mutex()
 
-    /**
-     * Copies the GGUF asset to internal storage if not already present.
-     * This is the slow one-time I/O step (~5–15s on first launch, ~0ms on subsequent launches).
-     * Call this eagerly at app startup so the file is ready before the user picks a document.
-     */
-    override suspend fun copyModelIfNeeded() = withContext(Dispatchers.IO) {
-        val dest = File(context.filesDir, MODEL_ASSET)
-        if (!dest.exists()) {
-            context.assets.open(MODEL_ASSET).use { src ->
-                dest.outputStream().use { src.copyTo(it) }
+    companion object {
+        private const val TAG = "LlamaEngine"
+        private const val MODEL_ASSET        = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+        private const val SYSTEM_PROMPT      = "Be concise."
+        private const val MAX_RESPONSE_CHARS = 3_000
+        private val STOP_SEQUENCES = listOf(
+            "<|im_end|>", "<|im_start|>", "<|endoftext|>",
+            "\nHuman:", "\nUser:", "\nQuestion:", "\nAssistant:",
+        )
+    }
+
+    override suspend fun copyModelIfNeeded() = copyMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val dest = File(context.filesDir, MODEL_ASSET)
+            // If it exists and is not a tiny/empty file, assume it's okay
+            if (dest.exists() && dest.length() > 1_000_000) return@withContext
+
+            Log.d(TAG, "Copying model asset to internal storage...")
+            val tmp = File(context.filesDir, "$MODEL_ASSET.tmp")
+            try {
+                context.assets.open(MODEL_ASSET).use { src ->
+                    tmp.outputStream().use { src.copyTo(it) }
+                }
+                if (!tmp.renameTo(dest)) {
+                    throw RuntimeException("Failed to rename temporary model file")
+                }
+                Log.d(TAG, "Model copy complete: ${dest.length()} bytes")
+            } finally {
+                if (tmp.exists()) tmp.delete()
             }
         }
     }
 
     private suspend fun ensureModelLoaded() {
-        if (modelLoaded) return
-        copyModelIfNeeded()          // no-op if already copied
-        LlamaBridge.initGenerateModel(File(context.filesDir, MODEL_ASSET).absolutePath)
-        modelLoaded = true
+        if (modelLoaded.get()) return
+        
+        copyModelIfNeeded()
+        
+        withContext(Dispatchers.IO) {
+            Log.d(TAG, "Initializing llama.cpp with model: $MODEL_ASSET")
+            try {
+                LlamaBridge.initGenerateModel(File(context.filesDir, MODEL_ASSET).absolutePath)
+                modelLoaded.set(true)
+                Log.d(TAG, "llama.cpp initialization successful")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize llama.cpp", e)
+                throw e
+            }
+        }
     }
 
     override suspend fun generate(prompt: String, onToken: (String) -> Unit): String =
-        withContext(Dispatchers.IO) {
-            ensureModelLoaded()
-            val result = suspendCancellableCoroutine { cont ->
-                val sb      = StringBuilder()
-                var stopped = false
-                LlamaBridge.generateStream(
-                    buildChatPrompt(prompt),
-                    object : GenStream {
-                        override fun onDelta(text: String) {
-                            if (stopped) return
-                            val prevLen = sb.length
-                            sb.append(text)
-                            // Hard cap — safety net if no stop sequence fires
-                            val capIdx = if (sb.length > MAX_RESPONSE_CHARS) MAX_RESPONSE_CHARS else -1
-                            // Earliest stop sequence in the accumulated buffer
-                            val seqIdx = STOP_SEQUENCES
-                                .mapNotNull { seq -> sb.indexOf(seq).takeIf { it >= 0 } }
-                                .minOrNull() ?: -1
-                            val stopIdx = when {
-                                seqIdx >= 0 && capIdx >= 0 -> minOf(seqIdx, capIdx)
-                                seqIdx >= 0               -> seqIdx
-                                capIdx >= 0               -> capIdx
-                                else                      -> -1
+        genMutex.withLock {
+            withContext(Dispatchers.IO) {
+                ensureModelLoaded()
+                Log.d(TAG, "Starting generation...")
+                val result = suspendCancellableCoroutine { cont ->
+                    val sb      = StringBuilder()
+                    var stopped = false
+                    LlamaBridge.generateStream(
+                        buildChatPrompt(prompt),
+                        object : GenStream {
+                            override fun onDelta(text: String) {
+                                if (stopped) return
+                                val prevLen = sb.length
+                                sb.append(text)
+
+                                val seqIdx = STOP_SEQUENCES
+                                    .mapNotNull { seq -> sb.indexOf(seq).takeIf { it >= 0 } }
+                                    .minOrNull()
+
+                                if (seqIdx != null || sb.length > MAX_RESPONSE_CHARS) {
+                                    stopped = true
+                                    val stopIdx = seqIdx ?: MAX_RESPONSE_CHARS
+                                    // Stream content up to the stop point, then wait for onComplete
+                                    // so the native thread finishes before genMutex is released.
+                                    val newPart = sb.substring(prevLen, minOf(stopIdx, sb.length))
+                                    if (newPart.isNotEmpty()) onToken(newPart)
+                                } else {
+                                    onToken(text)
+                                }
                             }
-                            if (stopIdx >= 0) {
-                                stopped = true
-                                val clean   = sb.substring(0, stopIdx)
-                                val newPart = clean.drop(prevLen)
-                                if (newPart.isNotEmpty()) onToken(newPart)
-                                cont.resume(clean)
-                            } else {
-                                onToken(text)
+                            override fun onComplete() {
+                                val finalText = if (stopped) {
+                                    val seqIdx = STOP_SEQUENCES
+                                        .mapNotNull { seq -> sb.indexOf(seq).takeIf { it >= 0 } }
+                                        .minOrNull()
+                                    sb.substring(0, seqIdx ?: minOf(MAX_RESPONSE_CHARS, sb.length))
+                                } else {
+                                    sb.toString()
+                                }
+                                if (cont.isActive) cont.resume(finalText)
+                            }
+                            override fun onError(message: String) {
+                                Log.e(TAG, "Llamatik error: $message")
+                                if (cont.isActive) cont.resumeWithException(RuntimeException(message))
                             }
                         }
-                        override fun onComplete() {
-                            if (!stopped) cont.resume(sb.toString())
-                        }
-                        override fun onError(message: String) {
-                            if (!stopped) cont.resumeWithException(RuntimeException(message))
-                        }
-                    }
-                )
+                    )
+                }
+                result
             }
-            // Clear KV cache after each generation so context doesn't accumulate
-            // across independent RAG queries (fixes Llamatik 0.18.0 context bug).
-            LlamaBridge.sessionReset()
-            result
         }
 
     override suspend fun warmUp() { ensureModelLoaded() }
 
     override fun close() {
-        // LlamaBridge is a process-scoped singleton; no explicit release in the API
-        modelLoaded = false
+        modelLoaded.set(false)
     }
 
     private fun buildChatPrompt(userContent: String): String =
         "<|im_start|>system\n$SYSTEM_PROMPT<|im_end|>\n" +
         "<|im_start|>user\n$userContent<|im_end|>\n" +
         "<|im_start|>assistant\n"
-
-    companion object {
-        private const val MODEL_ASSET        = "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"
-        private const val SYSTEM_PROMPT      = "Be concise."
-        // Safety net: truncate if no stop sequence fires (~600 words)
-        private const val MAX_RESPONSE_CHARS = 3_000
-        private val STOP_SEQUENCES = listOf(
-            "<|im_end|>",        // ChatML: primary stop
-            "<|im_start|>",      // ChatML: catches looping
-            "<|endoftext|>",
-            "\nHuman:",
-            "\nUser:",
-            "\nQuestion:",
-            "\nAssistant:",
-        )
-    }
 }
