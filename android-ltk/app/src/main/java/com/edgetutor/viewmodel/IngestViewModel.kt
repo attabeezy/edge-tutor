@@ -12,6 +12,7 @@ import com.edgetutor.data.db.IngestionStatus
 import com.edgetutor.ingestion.Embedder
 import com.edgetutor.ingestion.PdfExtractor
 import com.edgetutor.ingestion.TextChunker
+import com.edgetutor.perf.EdgeTutorPerf
 import com.edgetutor.store.FlatIndex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -67,8 +68,18 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
     private fun computeAdaptivePageWindow(): Int =
         if (isLowMemory()) LOW_MEM_PAGE_WINDOW else DEFAULT_PAGE_WINDOW
 
+    private suspend fun replaceAllDocuments() {
+        activeJobs.values.forEach { it.cancel() }
+        activeJobs.clear()
+        db.documentDao().getAll().forEach { doc ->
+            File(getApplication<Application>().filesDir, "${doc.id}.idx").delete()
+            db.documentDao().delete(doc)
+        }
+    }
+
     fun ingest(uri: Uri, displayName: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            replaceAllDocuments()
             val docId = db.documentDao().insert(
                 DocumentEntity(displayName = displayName, uriString = uri.toString())
             )
@@ -86,10 +97,19 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
                 var totalPages = 0
                 var isScanned = false
                 var globalChunkIdx = 0
+                val ingestStartNs = System.nanoTime()
+                val app = getApplication<Application>()
 
                 val embedBatch = computeAdaptiveBatchSize()
                 val pageWindow = computeAdaptivePageWindow()
                 Log.d(TAG, "Starting ingestion: embedBatch=$embedBatch, pageWindow=$pageWindow, freeMem=${getAvailableMemoryMB()}MB")
+                EdgeTutorPerf.snapshot(
+                    app,
+                    "ingest_start",
+                    "doc_id" to docId,
+                    "embed_batch" to embedBatch,
+                    "page_window" to pageWindow,
+                )
 
                 index.startAppend(indexFile, embedder.dim)
 
@@ -104,7 +124,13 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
                         ensureActive()
                         setProgress(docId, IngestionProgress("Embedding", globalChunkIdx, -1))
 
-                        val vectors = embedder.embedBatch(batch.map { it.text })
+                        val vectors = EdgeTutorPerf.trace(
+                            "embed_batch",
+                            "doc_id" to docId,
+                            "batch_size" to batch.size,
+                        ) {
+                            embedder.embedBatch(batch.map { it.text })
+                        }
                         batch.forEachIndexed { i, chunk ->
                             requireNotNull(index).append(FlatIndex.Entry((globalChunkIdx + chunk.index).toLong(), chunk.text, vectors[i]))
                         }
@@ -122,6 +148,27 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
                         chunkCount = globalChunkIdx,
                         isLikelyScanned = isScanned,
                     )
+                )
+                val ingestDurationMs = (System.nanoTime() - ingestStartNs) / 1_000_000
+                EdgeTutorPerf.log(
+                    "ingest_total",
+                    "doc_id" to docId,
+                    "duration_ms" to ingestDurationMs,
+                    "pages" to totalPages,
+                    "chunks" to globalChunkIdx,
+                )
+                EdgeTutorPerf.log(
+                    "ingest_pages_per_sec",
+                    "doc_id" to docId,
+                    "pages" to totalPages,
+                    "pages_per_sec" to if (ingestDurationMs > 0) (totalPages * 1000.0 / ingestDurationMs) else 0.0,
+                )
+                EdgeTutorPerf.snapshot(
+                    app,
+                    "ingest_end",
+                    "doc_id" to docId,
+                    "pages" to totalPages,
+                    "chunks" to globalChunkIdx,
                 )
             } catch (e: CancellationException) {
                 db.documentDao().update(doc.copy(status = IngestionStatus.ERROR, errorMessage = "Cancelled"))

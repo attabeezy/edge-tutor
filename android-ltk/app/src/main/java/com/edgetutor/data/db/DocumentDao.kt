@@ -20,4 +20,7 @@ interface DocumentDao {
 
     @Query("SELECT * FROM documents WHERE id = :id")
     suspend fun getById(id: Long): DocumentEntity?
+
+    @Query("SELECT * FROM documents")
+    suspend fun getAll(): List<DocumentEntity>
 }

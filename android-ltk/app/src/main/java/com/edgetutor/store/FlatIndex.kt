@@ -34,6 +34,9 @@ class FlatIndex {
     private var appendEntryCount: Int = 0
     private var appendDims: Int = 0
     private var appendFile: File? = null
+    private var appendFixedBuf: ByteBuffer? = null
+    private var appendFloatBuf: ByteBuffer? = null
+    private var appendCountBuf: ByteBuffer? = null
 
     val size: Int get() = entries.size
 
@@ -45,14 +48,49 @@ class FlatIndex {
      * Return the [k] entries whose vectors are most similar to [query].
      * [query] need not be pre-normalised; normalisation is applied here.
      */
-    fun search(query: FloatArray, k: Int): List<Entry> {
-        if (entries.isEmpty()) return emptyList()
+    fun search(query: FloatArray, k: Int): List<Entry> =
+        searchWithScores(query, k).map { (entry, _) -> entry }
+
+    /**
+     * Like [search] but also returns the cosine similarity score for each result.
+     * Scores are in [-1, 1]; higher = more similar.
+     */
+    fun searchWithScores(query: FloatArray, k: Int): List<Pair<Entry, Float>> {
+        if (entries.isEmpty() || k <= 0) return emptyList()
         val qn = l2Norm(query)
-        return entries
-            .map { e -> e to dot(qn, e.vector) }
-            .sortedByDescending { (_, sim) -> sim }
-            .take(k)
-            .map { (entry, _) -> entry }
+        val topEntries = arrayOfNulls<Entry>(minOf(k, entries.size))
+        val topScores = FloatArray(minOf(k, entries.size))
+        var filled = 0
+        var lowestTopIndex = 0
+
+        for (entry in entries) {
+            val score = dot(qn, entry.vector)
+            if (filled < topEntries.size) {
+                topEntries[filled] = entry
+                topScores[filled] = score
+                if (score < topScores[lowestTopIndex]) lowestTopIndex = filled
+                filled++
+                continue
+            }
+
+            if (score <= topScores[lowestTopIndex]) continue
+
+            topEntries[lowestTopIndex] = entry
+            topScores[lowestTopIndex] = score
+            lowestTopIndex = 0
+            for (i in 1 until filled) {
+                if (topScores[i] < topScores[lowestTopIndex]) {
+                    lowestTopIndex = i
+                }
+            }
+        }
+
+        val result = ArrayList<Pair<Entry, Float>>(filled)
+        for (i in 0 until filled) {
+            result += requireNotNull(topEntries[i]) to topScores[i]
+        }
+        result.sortByDescending { (_, sim) -> sim }
+        return result
     }
 
     // ---------------------------------------------------------------------------
@@ -71,11 +109,12 @@ class FlatIndex {
             header.putInt(FILE_VERSION).putInt(dims).putInt(entries.size).flip()
             ch.write(header)
 
+            val fixedBuf = ByteBuffer.allocateDirect(12).order(ByteOrder.nativeOrder())
             val floatBuf = ByteBuffer.allocateDirect(floatBufBytes).order(ByteOrder.nativeOrder())
 
             for (e in entries) {
                 val textBytes = e.text.toByteArray(Charsets.UTF_8)
-                val fixedBuf = ByteBuffer.allocateDirect(12).order(ByteOrder.nativeOrder())
+                fixedBuf.clear()
                 fixedBuf.putLong(e.id).putInt(textBytes.size).flip()
                 ch.write(fixedBuf)
                 ch.write(ByteBuffer.wrap(textBytes))
@@ -101,9 +140,10 @@ class FlatIndex {
 
             val floatBufBytes = dims * Float.SIZE_BYTES
             val floatBuf = ByteBuffer.allocateDirect(floatBufBytes).order(ByteOrder.nativeOrder())
+            val fixedBuf = ByteBuffer.allocateDirect(12).order(ByteOrder.nativeOrder())
 
             repeat(count) {
-                val fixedBuf = ByteBuffer.allocateDirect(12).order(ByteOrder.nativeOrder())
+                fixedBuf.clear()
                 ch.read(fixedBuf); fixedBuf.flip()
                 val id      = fixedBuf.long
                 val textLen = fixedBuf.int
@@ -157,6 +197,9 @@ class FlatIndex {
         raf.channel.write(header)
 
         appendChannelStream = java.io.FileOutputStream(file, true)
+        appendFixedBuf = ByteBuffer.allocateDirect(12).order(ByteOrder.nativeOrder())
+        appendFloatBuf = ByteBuffer.allocateDirect(dims * Float.SIZE_BYTES).order(ByteOrder.nativeOrder())
+        appendCountBuf = ByteBuffer.allocate(4).order(ByteOrder.nativeOrder())
     }
 
     /**
@@ -165,18 +208,17 @@ class FlatIndex {
      */
     fun append(entry: Entry) {
         val stream = appendChannelStream ?: error("startAppend not called")
-        val dims = appendDims
-        val floatBufBytes = dims * Float.SIZE_BYTES
+        val floatBuf = appendFloatBuf ?: error("startAppend not called")
+        val fixedBuf = appendFixedBuf ?: error("startAppend not called")
 
         val textBytes = entry.text.toByteArray(Charsets.UTF_8)
-        val fixedBuf = ByteBuffer.allocate(12).order(ByteOrder.nativeOrder())
+        fixedBuf.clear()
         fixedBuf.putLong(entry.id).putInt(textBytes.size).flip()
         stream.channel.write(fixedBuf)
         stream.channel.write(ByteBuffer.wrap(textBytes))
 
-        val floatBuf = ByteBuffer.allocateDirect(floatBufBytes).order(ByteOrder.nativeOrder())
+        floatBuf.clear()
         floatBuf.asFloatBuffer().put(entry.vector)
-        floatBuf.limit(floatBufBytes)
         stream.channel.write(floatBuf)
 
         appendEntryCount++
@@ -193,7 +235,8 @@ class FlatIndex {
             // Must use a native-endian ByteBuffer — raf.writeInt() is big-endian
             // but load() reads the header with ByteOrder.nativeOrder() (little-endian
             // on ARM), which would silently corrupt the count field.
-            val countBuf = ByteBuffer.allocate(4).order(ByteOrder.nativeOrder())
+            val countBuf = appendCountBuf ?: ByteBuffer.allocate(4).order(ByteOrder.nativeOrder())
+            countBuf.clear()
             countBuf.putInt(appendEntryCount).flip()
             raf.channel.position(8)
             raf.channel.write(countBuf)
@@ -203,6 +246,9 @@ class FlatIndex {
             appendChannel = null
             appendChannelStream = null
             appendFile = null
+            appendFixedBuf = null
+            appendFloatBuf = null
+            appendCountBuf = null
         }
     }
 

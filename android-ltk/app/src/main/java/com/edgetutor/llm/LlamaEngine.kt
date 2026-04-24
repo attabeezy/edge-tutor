@@ -2,6 +2,7 @@ package com.edgetutor.llm
 
 import android.content.Context
 import android.util.Log
+import com.edgetutor.perf.EdgeTutorPerf
 import com.llamatik.library.platform.GenStream
 import com.llamatik.library.platform.LlamaBridge
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +28,7 @@ import kotlin.coroutines.resumeWithException
 class LlamaEngine(private val context: Context) : LlmEngine {
 
     private val modelLoaded = AtomicBoolean(false)
+    private val warmUpComplete = AtomicBoolean(false)
     private val copyMutex   = Mutex()
     /** Ensures only one native generation runs at a time; released only after onComplete/onError. */
     private val genMutex    = Mutex()
@@ -36,10 +38,13 @@ class LlamaEngine(private val context: Context) : LlmEngine {
         private const val MODEL_ASSET        = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
         private const val SYSTEM_PROMPT      = "Be concise."
         private const val MAX_RESPONSE_CHARS = 3_000
+        private const val WARM_UP_PROMPT     = "Reply with the word ready."
         private val STOP_SEQUENCES = listOf(
             "<|im_end|>", "<|im_start|>", "<|endoftext|>",
             "\nHuman:", "\nUser:", "\nQuestion:", "\nAssistant:",
         )
+        /** Longest stop sequence length — used to bound the tail scan window. */
+        private val MAX_STOP_SEQ_LEN = STOP_SEQUENCES.maxOf { it.length }
     }
 
     override suspend fun copyModelIfNeeded() = copyMutex.withLock {
@@ -87,62 +92,107 @@ class LlamaEngine(private val context: Context) : LlmEngine {
             withContext(Dispatchers.IO) {
                 ensureModelLoaded()
                 Log.d(TAG, "Starting generation...")
-                val result = suspendCancellableCoroutine { cont ->
-                    val sb      = StringBuilder()
-                    var stopped = false
-                    LlamaBridge.generateStream(
-                        buildChatPrompt(prompt),
-                        object : GenStream {
-                            override fun onDelta(text: String) {
-                                if (stopped) return
-                                val prevLen = sb.length
-                                sb.append(text)
-
-                                val seqIdx = STOP_SEQUENCES
-                                    .mapNotNull { seq -> sb.indexOf(seq).takeIf { it >= 0 } }
-                                    .minOrNull()
-
-                                if (seqIdx != null || sb.length > MAX_RESPONSE_CHARS) {
-                                    stopped = true
-                                    val stopIdx = seqIdx ?: MAX_RESPONSE_CHARS
-                                    // Stream content up to the stop point, then wait for onComplete
-                                    // so the native thread finishes before genMutex is released.
-                                    val newPart = sb.substring(prevLen, minOf(stopIdx, sb.length))
-                                    if (newPart.isNotEmpty()) onToken(newPart)
-                                } else {
-                                    onToken(text)
-                                }
-                            }
-                            override fun onComplete() {
-                                val finalText = if (stopped) {
-                                    val seqIdx = STOP_SEQUENCES
-                                        .mapNotNull { seq -> sb.indexOf(seq).takeIf { it >= 0 } }
-                                        .minOrNull()
-                                    sb.substring(0, seqIdx ?: minOf(MAX_RESPONSE_CHARS, sb.length))
-                                } else {
-                                    sb.toString()
-                                }
-                                if (cont.isActive) cont.resume(finalText)
-                            }
-                            override fun onError(message: String) {
-                                Log.e(TAG, "Llamatik error: $message")
-                                if (cont.isActive) cont.resumeWithException(RuntimeException(message))
-                            }
-                        }
-                    )
-                }
-                result
+                generateInternal(buildChatPrompt(prompt), logQueryMetrics = true, onToken = onToken)
             }
         }
 
-    override suspend fun warmUp() { ensureModelLoaded() }
+    override suspend fun warmUp() {
+        genMutex.withLock {
+            withContext(Dispatchers.IO) {
+                ensureModelLoaded()
+                if (warmUpComplete.get()) return@withContext
+                generateInternal(buildChatPrompt(WARM_UP_PROMPT), logQueryMetrics = false, onToken = {})
+                warmUpComplete.set(true)
+            }
+        }
+    }
 
     override fun close() {
         modelLoaded.set(false)
+        warmUpComplete.set(false)
     }
 
     private fun buildChatPrompt(userContent: String): String =
         "<|im_start|>system\n$SYSTEM_PROMPT<|im_end|>\n" +
         "<|im_start|>user\n$userContent<|im_end|>\n" +
         "<|im_start|>assistant\n"
+
+    private suspend fun generateInternal(
+        prompt: String,
+        logQueryMetrics: Boolean,
+        onToken: (String) -> Unit,
+    ): String =
+        suspendCancellableCoroutine { cont ->
+            val sb      = StringBuilder()
+            var stopped = false
+            val startNs = System.nanoTime()
+            var firstTokenLogged = false
+            LlamaBridge.generateStream(
+                prompt,
+                object : GenStream {
+                    override fun onDelta(text: String) {
+                        if (stopped) return
+                        if (logQueryMetrics && !firstTokenLogged && text.isNotEmpty()) {
+                            firstTokenLogged = true
+                            EdgeTutorPerf.log(
+                                "query_ttft",
+                                "duration_ms" to ((System.nanoTime() - startNs) / 1_000_000),
+                            )
+                        }
+                        val prevLen = sb.length
+                        sb.append(text)
+
+                        // Only scan the tail (window = longest stop seq) to avoid
+                        // O(response_length) search cost on every token.
+                        val tailStart = maxOf(0, sb.length - MAX_STOP_SEQ_LEN - text.length)
+                        val tail = sb.substring(tailStart)
+                        val seqIdx = STOP_SEQUENCES
+                            .mapNotNull { seq -> tail.indexOf(seq).takeIf { it >= 0 }?.let { tailStart + it } }
+                            .minOrNull()
+
+                        if (seqIdx != null || sb.length > MAX_RESPONSE_CHARS) {
+                            stopped = true
+                            val stopIdx = seqIdx ?: MAX_RESPONSE_CHARS
+                            val newPart = sb.substring(prevLen, minOf(stopIdx, sb.length))
+                            if (newPart.isNotEmpty()) onToken(newPart)
+                        } else {
+                            onToken(text)
+                        }
+                    }
+
+                    override fun onComplete() {
+                        if (logQueryMetrics) {
+                            EdgeTutorPerf.log(
+                                "query_total_answer",
+                                "duration_ms" to ((System.nanoTime() - startNs) / 1_000_000),
+                            )
+                        }
+                        val finalText = if (stopped) {
+                            // Scan only the tail for the stop marker position.
+                            val tailStart = maxOf(0, sb.length - MAX_STOP_SEQ_LEN)
+                            val tail = sb.substring(tailStart)
+                            val seqIdx = STOP_SEQUENCES
+                                .mapNotNull { seq -> tail.indexOf(seq).takeIf { it >= 0 }?.let { tailStart + it } }
+                                .minOrNull()
+                            sb.substring(0, seqIdx ?: minOf(MAX_RESPONSE_CHARS, sb.length))
+                        } else {
+                            sb.toString()
+                        }
+                        if (cont.isActive) cont.resume(finalText)
+                    }
+
+                    override fun onError(message: String) {
+                        Log.e(TAG, "Llamatik error: $message")
+                        if (logQueryMetrics) {
+                            EdgeTutorPerf.log(
+                                "query_total_answer",
+                                "duration_ms" to ((System.nanoTime() - startNs) / 1_000_000),
+                                "status" to "error",
+                            )
+                        }
+                        if (cont.isActive) cont.resumeWithException(RuntimeException(message))
+                    }
+                }
+            )
+        }
 }

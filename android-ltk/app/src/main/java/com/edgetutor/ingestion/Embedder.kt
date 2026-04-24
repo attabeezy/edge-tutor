@@ -22,6 +22,10 @@ class Embedder(context: Context) : AutoCloseable {
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val session: OrtSession
     private val tokenizer: WordPieceTokenizer
+    private val singleInputIds = LongArray(MAX_LEN)
+    private val singleAttnMask = LongArray(MAX_LEN)
+    private val singleTokenTypes = LongArray(MAX_LEN)
+    private val singleShape = longArrayOf(1L, MAX_LEN.toLong())
 
     /** Embedding dimensionality — 384 for snowflake-arctic-embed-xs. */
     val dim = 384
@@ -30,6 +34,8 @@ class Embedder(context: Context) : AutoCloseable {
         private const val QUERY_PREFIX =
             "Represent this sentence for searching relevant passages: "
         private const val ASSET_MODEL_SIZE = 22891703L  // arctic.onnx size in bytes (int8 quantized)
+        private const val WARM_UP_TEXT = "warmup"
+        private const val MAX_LEN = 128
     }
 
     init {
@@ -69,17 +75,18 @@ class Embedder(context: Context) : AutoCloseable {
     }
 
     /**
-     * No-op — OrtSession and tokenizer are initialised eagerly in [init].
-     * Call this instead of [embed] with an empty string to avoid a wasteful inference pass.
+     * Prime the tokenizer + ORT execution path with a tiny real inference.
      */
-    fun warmUp() = Unit
+    fun warmUp() {
+        embed(WARM_UP_TEXT, isQuery = false)
+    }
 
     /**
      * Embed a single string. Returns a L2-normalised [dim]-dim FloatArray.
      * Set [isQuery]=true when embedding a user question to apply the Arctic query prefix.
      */
     fun embed(text: String, isQuery: Boolean = false): FloatArray =
-        embedBatch(listOf(text), isQuery)[0]
+        embedSingle(text, isQuery)
 
     /**
      * Embed a batch of strings in one ONNX call.
@@ -87,23 +94,23 @@ class Embedder(context: Context) : AutoCloseable {
      * Set [isQuery]=true when embedding user questions (applies Arctic query prefix).
      */
     fun embedBatch(texts: List<String>, isQuery: Boolean = false): Array<FloatArray> {
-        val preparedTexts = if (isQuery) texts.map { QUERY_PREFIX + it } else texts
         require(texts.isNotEmpty()) { "texts must not be empty" }
+        if (texts.size == 1) return arrayOf(embedSingle(texts[0], isQuery))
 
-        val maxLen   = 128
+        val preparedTexts = if (isQuery) texts.map { QUERY_PREFIX + it } else texts
         val batch    = preparedTexts.size
-        val encodings = preparedTexts.map { tokenizer.encode(it, maxLen) }
+        val encodings = preparedTexts.map { tokenizer.encode(it, MAX_LEN) }
 
-        val inputIds    = LongArray(batch * maxLen)
-        val attnMask    = LongArray(batch * maxLen)
-        val tokenTypes  = LongArray(batch * maxLen)
+        val inputIds    = LongArray(batch * MAX_LEN)
+        val attnMask    = LongArray(batch * MAX_LEN)
+        val tokenTypes  = LongArray(batch * MAX_LEN)
         encodings.forEachIndexed { b, enc ->
-            enc.inputIds.copyInto(inputIds,   b * maxLen)
-            enc.attentionMask.copyInto(attnMask,  b * maxLen)
-            enc.tokenTypeIds.copyInto(tokenTypes, b * maxLen)
+            enc.inputIds.copyInto(inputIds,   b * MAX_LEN)
+            enc.attentionMask.copyInto(attnMask,  b * MAX_LEN)
+            enc.tokenTypeIds.copyInto(tokenTypes, b * MAX_LEN)
         }
 
-        val shape = longArrayOf(batch.toLong(), maxLen.toLong())
+        val shape = longArrayOf(batch.toLong(), MAX_LEN.toLong())
         var tIds: OnnxTensor? = null
         var tMask: OnnxTensor? = null
         var tType: OnnxTensor? = null
@@ -124,10 +131,44 @@ class Embedder(context: Context) : AutoCloseable {
             val hidden = outputs[0].value as Array<Array<FloatArray>>
 
             val result = Array(batch) { b ->
-                meanPoolAndNorm(hidden[b], attnMask, maskOffset = b * maxLen, seqLen = maxLen)
+                meanPoolAndNorm(hidden[b], attnMask, maskOffset = b * MAX_LEN, seqLen = MAX_LEN)
             }
 
             return result
+        } finally {
+            tIds?.close()
+            tMask?.close()
+            tType?.close()
+            outputs?.close()
+        }
+    }
+
+    private fun embedSingle(text: String, isQuery: Boolean): FloatArray {
+        val preparedText = if (isQuery) QUERY_PREFIX + text else text
+        val encoding = tokenizer.encode(preparedText, MAX_LEN)
+        encoding.inputIds.copyInto(singleInputIds)
+        encoding.attentionMask.copyInto(singleAttnMask)
+        encoding.tokenTypeIds.copyInto(singleTokenTypes)
+
+        var tIds: OnnxTensor? = null
+        var tMask: OnnxTensor? = null
+        var tType: OnnxTensor? = null
+        var outputs: OrtSession.Result? = null
+
+        try {
+            tIds = OnnxTensor.createTensor(env, LongBuffer.wrap(singleInputIds), singleShape)
+            tMask = OnnxTensor.createTensor(env, LongBuffer.wrap(singleAttnMask), singleShape)
+            tType = OnnxTensor.createTensor(env, LongBuffer.wrap(singleTokenTypes), singleShape)
+
+            outputs = session.run(mapOf(
+                "input_ids" to tIds,
+                "attention_mask" to tMask,
+                "token_type_ids" to tType,
+            ))
+
+            @Suppress("UNCHECKED_CAST")
+            val hidden = outputs[0].value as Array<Array<FloatArray>>
+            return meanPoolAndNorm(hidden[0], singleAttnMask, maskOffset = 0, seqLen = MAX_LEN)
         } finally {
             tIds?.close()
             tMask?.close()
