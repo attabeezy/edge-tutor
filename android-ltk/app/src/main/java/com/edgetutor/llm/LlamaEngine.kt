@@ -19,8 +19,8 @@ import kotlin.coroutines.resumeWithException
  * LLM engine backed by llama.cpp via Llamatik.
  *
  * Model file required in assets/:
- *   Qwen2.5-0.5B-Instruct-Q4_K_M.gguf  (~350 MB)
- *   Download: hf download bartowski/Qwen2.5-0.5B-Instruct-GGUF Qwen2.5-0.5B-Instruct-Q4_K_M.gguf
+ *   LFM2.5-350M-Q4_K_M.gguf  (~267 MB)
+ *   Download: hf download LiquidAI/LFM2.5-350M-GGUF LFM2.5-350M-Q4_K_M.gguf
  *   Do NOT commit to git — copy manually before build.
  *
  * Switch to [MediaPipeEngine] if Llamatik is unavailable.
@@ -35,7 +35,7 @@ class LlamaEngine(private val context: Context) : LlmEngine {
 
     companion object {
         private const val TAG = "LlamaEngine"
-        private const val MODEL_ASSET        = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+        private const val MODEL_ASSET        = "LFM2.5-350M-Q4_K_M.gguf"
         private const val SYSTEM_PROMPT      = "Be concise."
         private const val MAX_RESPONSE_CHARS = 3_000
         private const val WARM_UP_PROMPT     = "Reply with the word ready."
@@ -56,6 +56,12 @@ class LlamaEngine(private val context: Context) : LlmEngine {
             Log.d(TAG, "Copying model asset to internal storage...")
             val tmp = File(context.filesDir, "$MODEL_ASSET.tmp")
             try {
+                if (!assetExists(MODEL_ASSET)) {
+                    throw IllegalStateException(
+                        "Missing model asset '$MODEL_ASSET' in app/src/main/assets/. " +
+                        "Copy it from models/lfm2.5-350m/ before launching the app."
+                    )
+                }
                 context.assets.open(MODEL_ASSET).use { src ->
                     tmp.outputStream().use { src.copyTo(it) }
                 }
@@ -68,6 +74,9 @@ class LlamaEngine(private val context: Context) : LlmEngine {
             }
         }
     }
+
+    private fun assetExists(name: String): Boolean =
+        context.assets.list("")?.contains(name) == true
 
     private suspend fun ensureModelLoaded() {
         if (modelLoaded.get()) return

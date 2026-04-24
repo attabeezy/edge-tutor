@@ -106,6 +106,7 @@ fun EdgeTutorApp(
     val progress by ingestVm.progress.collectAsState()
     val messages by chatVm.messages.collectAsState()
     val thinking by chatVm.isThinking.collectAsState()
+    val lastThinkingDurationMs by chatVm.lastThinkingDurationMs.collectAsState()
     val warmingUp by chatVm.isWarmingUp.collectAsState()
     val errorMsg by chatVm.errorMessage.collectAsState()
     val activeDocId by chatVm.activeDocumentId.collectAsState()
@@ -179,6 +180,7 @@ fun EdgeTutorApp(
             currentDoc = currentDoc,
             messages = messages,
             thinking = thinking,
+            lastThinkingDurationMs = lastThinkingDurationMs,
             warmingUp = warmingUp,
         )
 
@@ -299,6 +301,7 @@ private fun ChatFeed(
     currentDoc: DocumentEntity?,
     messages: List<ChatMessage>,
     thinking: Boolean,
+    lastThinkingDurationMs: Long?,
     warmingUp: Boolean,
 ) {
     if (currentDoc == null) {
@@ -317,6 +320,10 @@ private fun ChatFeed(
         if (thinking) {
             item {
                 ThinkingNote()
+            }
+        } else if (lastThinkingDurationMs != null) {
+            item {
+                StatusNote("thought for ${formatElapsedDuration(lastThinkingDurationMs)}")
             }
         }
         if (warmingUp) {
@@ -417,6 +424,18 @@ private fun ThinkingNote() {
     }
 
     StatusNote("thinking${".".repeat(dotCount)}")
+}
+
+private fun formatElapsedDuration(durationMs: Long): String {
+    val totalSeconds = (durationMs.coerceAtLeast(0L) / 1000L).toInt()
+    val hours = totalSeconds / 3600
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return when {
+        hours > 0 -> "${hours}h ${minutes % 60}m ${seconds}s"
+        minutes > 0 -> "${minutes}m ${seconds}s"
+        else -> "${seconds}s"
+    }
 }
 
 @Composable

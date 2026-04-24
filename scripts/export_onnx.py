@@ -6,7 +6,7 @@ Outputs
   models/arctic.onnx   -- ONNX model (transformer backbone, opset 14)
   models/vocab.txt     -- WordPiece vocabulary (30k tokens, one per line)
 
-Then copies both files to android/app/src/main/assets/ so Gradle
+Then copies both files to the Android app assets directory so Gradle
 picks them up automatically on the next sync / build.
 
 Requirements
@@ -36,7 +36,6 @@ PROJECT_ROOT = Path(__file__).parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
 ASSETS_DIRS = [
     PROJECT_ROOT / "android-ltk" / "app" / "src" / "main" / "assets",
-    PROJECT_ROOT / "android-mlc" / "app" / "src" / "main" / "assets",
 ]
 ONNX_PATH = MODELS_DIR / "arctic.onnx"
 VOCAB_PATH = MODELS_DIR / "vocab.txt"
@@ -232,4 +231,4 @@ for assets_dir in ASSETS_DIRS:
         print(f"  {src.name} -> {dst}")
 
 print("\nAll done.")
-print("Next: open android-ltk/ or android-mlc/ in Android Studio and run Gradle sync.")
+print("Next: open android-ltk/ in Android Studio and run Gradle sync.")

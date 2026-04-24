@@ -5,7 +5,7 @@
 #
 # Usage (from the edge-tutor project folder):
 #   .\edgetutor_setup.ps1 phase1   # ingestion pipeline only
-#   .\edgetutor_setup.ps1 phase2   # + full RAG (Ollama + Qwen2.5)
+#   .\edgetutor_setup.ps1 phase2   # + full RAG (Ollama + LFM2.5)
 #   .\edgetutor_setup.ps1 phase3   # + Android Studio scaffold + JDK check
 #   .\edgetutor_setup.ps1 all      # everything
 #
@@ -359,7 +359,7 @@ def test_chunk_count_reasonable():
 # ===========================================================================
 # PHASE 2 — Full RAG pipeline (Python)
 # Needs: Phase 1 + Ollama installed and running
-# Gives you: question -> retrieve -> generate flow via Qwen2.5-0.5B
+# Gives you: question -> retrieve -> generate flow via LFM2.5-350M
 # ===========================================================================
 function Phase2 {
     Phase1   # Phase 2 includes Phase 1
@@ -384,13 +384,13 @@ function Phase2 {
     Ok "requirements.txt updated"
 
     # Pull model via Ollama
-    Info "Pulling Qwen2.5-0.5B via Ollama (~400 MB — may take a few minutes)..."
+    Info "Pulling LFM2.5-350M via Ollama (~250 MB for q4_k_m — may take a few minutes)..."
     try {
-        ollama pull qwen2.5:0.5b
+        ollama pull lfm2.5:350m
         Ok "Model pulled"
     } catch {
         Warn "Ollama pull failed. Make sure Ollama is running (check system tray) and retry:"
-        Write-Host "  ollama pull qwen2.5:0.5b"
+        Write-Host "  ollama pull lfm2.5:350m"
     }
 
     # RAG source files
@@ -412,7 +412,7 @@ from src.ingestion.pipeline import retrieve, get_embed_model, EMBED_MODEL as DEF
 # ------------------------------------------------------------------
 # Config
 # ------------------------------------------------------------------
-LLM_MODEL            = "qwen2.5:0.5b"
+LLM_MODEL            = "lfm2.5:350m"
 INDEX_DIR            = "data/index"
 TOP_K                = 3
 MAX_RELEVANT_DISTANCE = 1.4   # L2 threshold; queries above this aren't in the document
@@ -586,7 +586,7 @@ def main():
     parser.add_argument(
         "-m", "--model",
         default=None,
-        help=f"Ollama model name (e.g. qwen2.5:0.5b). Default: {LLM_MODEL}",
+        help=f"Ollama model name (e.g. lfm2.5:350m). Default: {LLM_MODEL}",
     )
     parser.add_argument(
         "-v", "--verbose",
@@ -768,7 +768,7 @@ dependencies {
     // Gson — FlatIndex JSON serialisation
     implementation("com.google.code.gson:gson:2.10.1")
 
-    // Llamatik (llama.cpp wrapper for GGUF models — Qwen2.5-0.5B)
+    // Llamatik (llama.cpp wrapper for GGUF models — LFM2.5-350M)
     // Verify latest version at https://github.com/ferranpons/Llamatik/releases
     implementation("com.llamatik:library-android:0.11.0")
 
@@ -850,7 +850,7 @@ Two engines are available — pick one (or both for comparison):
 
 | Engine         | Class             | Model file                          | Size    |
 |----------------|-------------------|-------------------------------------|---------|
-| Llamatik       | LlamaEngine       | qwen2.5-0.5b-instruct-q4_k_m.gguf  | ~350 MB |
+| Llamatik       | LlamaEngine       | LFM2.5-350M-Q4_K_M.gguf            | ~267 MB |
 | MediaPipe      | MediaPipeEngine   | gemma-3-270m-it-q4_k_m.task        | ~253 MB |
 
 To switch engines, change one line in ChatViewModel.kt:
@@ -860,7 +860,7 @@ To switch engines, change one line in ChatViewModel.kt:
 
 | File                                   | Source                                          | Size    |
 |----------------------------------------|-------------------------------------------------|---------|
-| qwen2.5-0.5b-instruct-q4_k_m.gguf     | HuggingFace: Qwen/Qwen2.5-0.5B-Instruct-GGUF   | ~350 MB |
+| LFM2.5-350M-Q4_K_M.gguf               | HuggingFace: LiquidAI/LFM2.5-350M-GGUF         | ~267 MB |
 | gemma-3-270m-it-q4_k_m.task           | HuggingFace: search "gemma-3-270m LiteRT"       | ~253 MB |
 | minilm.onnx                            | Run: python scripts/export_onnx.py              | ~22 MB  |
 | vocab.txt                              | Run: python scripts/export_onnx.py              | ~226 KB |
@@ -906,7 +906,7 @@ switch ($Phase) {
         Write-Host "  Usage: .\edgetutor_setup.ps1 [phase1|phase2|phase3|all]" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "  phase1  — Python ingestion pipeline only  (weeks 1-2)"
-        Write-Host "  phase2  — + full RAG with Ollama + Qwen2.5 (weeks 3-4)"
+        Write-Host "  phase2  — + full RAG with Ollama + LFM2.5 (weeks 3-4)"
         Write-Host "  phase3  — + Android Studio scaffold + JDK check (weeks 5-7)"
         Write-Host "  all     — everything (phases 1-4)"
         Write-Host ""

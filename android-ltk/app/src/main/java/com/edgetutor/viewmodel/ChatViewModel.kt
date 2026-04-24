@@ -2,6 +2,7 @@ package com.edgetutor.viewmodel
 
 import android.app.ActivityManager
 import android.app.Application
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.edgetutor.data.db.DocumentEntity
@@ -49,6 +50,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _isThinking  = MutableStateFlow(false)
     val isThinking: StateFlow<Boolean> = _isThinking
+
+    private val _lastThinkingDurationMs = MutableStateFlow<Long?>(null)
+    val lastThinkingDurationMs: StateFlow<Long?> = _lastThinkingDurationMs.asStateFlow()
 
     private val _isWarmingUp = MutableStateFlow(false)
     val isWarmingUp: StateFlow<Boolean> = _isWarmingUp
@@ -119,6 +123,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun loadDocument(doc: DocumentEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             _isWarmingUp.value = true
+            _lastThinkingDurationMs.value = null
             try {
                 val file = File(getApplication<Application>().filesDir, "${doc.id}.idx")
                 if (!file.exists()) { _isWarmingUp.value = false; return@launch }
@@ -165,6 +170,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (_isWarmingUp.value) return
 
         viewModelScope.launch(Dispatchers.IO) {
+            val thinkingStartMs = SystemClock.elapsedRealtime()
+            var shouldPersistThinkingDuration = false
+            _lastThinkingDurationMs.value = null
             _isThinking.value = true
             _messages.value  += ChatMessage(Role.USER, question)
             try {
@@ -198,6 +206,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         role = Role.ASSISTANT,
                         text = "This doesn't appear to be covered in the loaded document.",
                     )
+                    shouldPersistThinkingDuration = true
                     return@launch  // finally still runs and resets _isThinking
                 }
 
@@ -257,11 +266,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         embedder = null
                     }
                 }
+
+                val lastAssistantMessage = _messages.value.lastOrNull()
+                shouldPersistThinkingDuration =
+                    lastAssistantMessage != null &&
+                    lastAssistantMessage.role == Role.ASSISTANT &&
+                    lastAssistantMessage.text.isNotBlank()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 _errorMessage.value = "Query failed: ${e.message}"
             } finally {
+                val thinkingDurationMs =
+                    if (shouldPersistThinkingDuration) SystemClock.elapsedRealtime() - thinkingStartMs
+                    else null
+                _lastThinkingDurationMs.value = thinkingDurationMs
                 _isThinking.value = false
             }
         }
@@ -269,6 +288,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resetHistory() {
         _messages.value = emptyList()
+        _lastThinkingDurationMs.value = null
     }
 
     // ---------------------------------------------------------------------------

@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Window/Activity theme. Compose handles all in-app theming;
-         this only sets the system chrome (status bar, window background). -->
-    <style name="Theme.EdgeTutor" parent="Theme.Material3.DayNight.NoActionBar" />
-</resources>

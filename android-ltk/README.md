@@ -19,12 +19,12 @@ Not tracked in git — store working copies in `models/` at the repo root and co
 
 | File | Source | Size |
 |---|---|---|
-| `qwen2.5-0.5b-instruct-q4_k_m.gguf` | HuggingFace: `bartowski/Qwen2.5-0.5B-Instruct-GGUF` | ~350 MB |
+| `LFM2.5-350M-Q4_K_M.gguf` | HuggingFace: `LiquidAI/LFM2.5-350M-GGUF` | ~267 MB |
 | `arctic.onnx` | Run `python scripts/export_onnx.py` | ~23 MB (int8) |
 | `vocab.txt` | Same export script | ~226 KB |
 
 ```bash
-hf download bartowski/Qwen2.5-0.5B-Instruct-GGUF Qwen2.5-0.5B-Instruct-Q4_K_M.gguf
+hf download LiquidAI/LFM2.5-350M-GGUF LFM2.5-350M-Q4_K_M.gguf
 ```
 
 ## Key dependencies
@@ -48,4 +48,3 @@ hf download bartowski/Qwen2.5-0.5B-Instruct-GGUF Qwen2.5-0.5B-Instruct-Q4_K_M.gg
 ## Known issues
 
 - **Time to first token** — dominated by LLM weight loading and prefill. Warm-up is triggered at document load (`ChatViewModel.loadDocument`) to reduce perceived latency.
-- **MLC-LLM variant** — for GPU-accelerated inference see `android-mlc/` (separate module, requires physical device with OpenCL GPU).
