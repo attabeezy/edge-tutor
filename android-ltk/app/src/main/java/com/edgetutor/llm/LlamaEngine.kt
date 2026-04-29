@@ -36,7 +36,7 @@ class LlamaEngine(private val context: Context) : LlmEngine {
     companion object {
         private const val TAG = "LlamaEngine"
         private const val MODEL_ASSET        = "LFM2.5-350M-Q4_K_M.gguf"
-        private const val SYSTEM_PROMPT      = "Be concise."
+        private const val SYSTEM_PROMPT      = "Be concise. Use plain ASCII only. Avoid special symbols."
         private const val MAX_RESPONSE_CHARS = 3_000
         private const val WARM_UP_PROMPT     = "Reply with the word ready."
         private val STOP_SEQUENCES = listOf(
@@ -51,9 +51,18 @@ class LlamaEngine(private val context: Context) : LlmEngine {
         withContext(Dispatchers.IO) {
             val dest = File(context.filesDir, MODEL_ASSET)
             // If it exists and is not a tiny/empty file, assume it's okay
-            if (dest.exists() && dest.length() > 1_000_000) return@withContext
+            if (dest.exists() && dest.length() > 1_000_000) {
+                EdgeTutorPerf.log(
+                    "llm_asset_check",
+                    "status" to "hit",
+                    "model_asset" to MODEL_ASSET,
+                    "bytes" to dest.length(),
+                )
+                return@withContext
+            }
 
             Log.d(TAG, "Copying model asset to internal storage...")
+            val copyStartNs = System.nanoTime()
             val tmp = File(context.filesDir, "$MODEL_ASSET.tmp")
             try {
                 if (!assetExists(MODEL_ASSET)) {
@@ -69,6 +78,12 @@ class LlamaEngine(private val context: Context) : LlmEngine {
                     throw RuntimeException("Failed to rename temporary model file")
                 }
                 Log.d(TAG, "Model copy complete: ${dest.length()} bytes")
+                EdgeTutorPerf.log(
+                    "llm_asset_copy",
+                    "model_asset" to MODEL_ASSET,
+                    "bytes" to dest.length(),
+                    "duration_ms" to EdgeTutorPerf.elapsedMs(copyStartNs),
+                )
             } finally {
                 if (tmp.exists()) tmp.delete()
             }
@@ -80,15 +95,21 @@ class LlamaEngine(private val context: Context) : LlmEngine {
 
     private suspend fun ensureModelLoaded() {
         if (modelLoaded.get()) return
-        
+
         copyModelIfNeeded()
-        
+
         withContext(Dispatchers.IO) {
             Log.d(TAG, "Initializing llama.cpp with model: $MODEL_ASSET")
+            val initStartNs = System.nanoTime()
             try {
                 LlamaBridge.initGenerateModel(File(context.filesDir, MODEL_ASSET).absolutePath)
                 modelLoaded.set(true)
                 Log.d(TAG, "llama.cpp initialization successful")
+                EdgeTutorPerf.log(
+                    "llm_native_init",
+                    "model_asset" to MODEL_ASSET,
+                    "duration_ms" to EdgeTutorPerf.elapsedMs(initStartNs),
+                )
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialize llama.cpp", e)
                 throw e
@@ -97,20 +118,30 @@ class LlamaEngine(private val context: Context) : LlmEngine {
     }
 
     override suspend fun generate(prompt: String, onToken: (String) -> Unit): String =
-        genMutex.withLock {
+        withGenerateLock(caller = "query") {
             withContext(Dispatchers.IO) {
                 ensureModelLoaded()
                 Log.d(TAG, "Starting generation...")
-                generateInternal(buildChatPrompt(prompt), logQueryMetrics = true, onToken = onToken)
+                generateInternal(
+                    prompt = buildChatPrompt(prompt),
+                    source = "query",
+                    logMetrics = true,
+                    onToken = onToken,
+                )
             }
         }
 
     override suspend fun warmUp() {
-        genMutex.withLock {
+        withGenerateLock(caller = "warm_up") {
             withContext(Dispatchers.IO) {
                 ensureModelLoaded()
                 if (warmUpComplete.get()) return@withContext
-                generateInternal(buildChatPrompt(WARM_UP_PROMPT), logQueryMetrics = false, onToken = {})
+                generateInternal(
+                    prompt = buildChatPrompt(WARM_UP_PROMPT),
+                    source = "warm_up",
+                    logMetrics = true,
+                    onToken = {},
+                )
                 warmUpComplete.set(true)
             }
         }
@@ -128,7 +159,8 @@ class LlamaEngine(private val context: Context) : LlmEngine {
 
     private suspend fun generateInternal(
         prompt: String,
-        logQueryMetrics: Boolean,
+        source: String,
+        logMetrics: Boolean,
         onToken: (String) -> Unit,
     ): String =
         suspendCancellableCoroutine { cont ->
@@ -141,11 +173,12 @@ class LlamaEngine(private val context: Context) : LlmEngine {
                 object : GenStream {
                     override fun onDelta(text: String) {
                         if (stopped) return
-                        if (logQueryMetrics && !firstTokenLogged && text.isNotEmpty()) {
+                        if (logMetrics && !firstTokenLogged && text.isNotEmpty()) {
                             firstTokenLogged = true
                             EdgeTutorPerf.log(
-                                "query_ttft",
-                                "duration_ms" to ((System.nanoTime() - startNs) / 1_000_000),
+                                "llm_decode_first_token",
+                                "source" to source,
+                                "llm_native_ttft_ms" to EdgeTutorPerf.elapsedMs(startNs),
                             )
                         }
                         val prevLen = sb.length
@@ -170,10 +203,11 @@ class LlamaEngine(private val context: Context) : LlmEngine {
                     }
 
                     override fun onComplete() {
-                        if (logQueryMetrics) {
+                        if (logMetrics) {
                             EdgeTutorPerf.log(
-                                "query_total_answer",
-                                "duration_ms" to ((System.nanoTime() - startNs) / 1_000_000),
+                                "llm_decode_total",
+                                "source" to source,
+                                "duration_ms" to EdgeTutorPerf.elapsedMs(startNs),
                             )
                         }
                         val finalText = if (stopped) {
@@ -192,10 +226,11 @@ class LlamaEngine(private val context: Context) : LlmEngine {
 
                     override fun onError(message: String) {
                         Log.e(TAG, "Llamatik error: $message")
-                        if (logQueryMetrics) {
+                        if (logMetrics) {
                             EdgeTutorPerf.log(
-                                "query_total_answer",
-                                "duration_ms" to ((System.nanoTime() - startNs) / 1_000_000),
+                                "llm_decode_total",
+                                "source" to source,
+                                "duration_ms" to EdgeTutorPerf.elapsedMs(startNs),
                                 "status" to "error",
                             )
                         }
@@ -204,4 +239,19 @@ class LlamaEngine(private val context: Context) : LlmEngine {
                 }
             )
         }
+
+    private suspend fun <T> withGenerateLock(caller: String, block: suspend () -> T): T {
+        val waitStartNs = System.nanoTime()
+        return genMutex.withLock {
+            val waitMs = EdgeTutorPerf.elapsedMs(waitStartNs)
+            if (waitMs > 0L) {
+                EdgeTutorPerf.log(
+                    "llm_gen_mutex_wait",
+                    "caller" to caller,
+                    "wait_ms" to waitMs,
+                )
+            }
+            block()
+        }
+    }
 }

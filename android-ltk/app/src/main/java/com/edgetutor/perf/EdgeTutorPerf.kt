@@ -27,6 +27,8 @@ object EdgeTutorPerf {
         )
     }
 
+    fun elapsedMs(startNs: Long): Long = (System.nanoTime() - startNs) / 1_000_000
+
     inline fun <T> trace(event: String, vararg fields: Pair<String, Any?>, block: () -> T): T {
         val startNs = System.nanoTime()
         return try {
