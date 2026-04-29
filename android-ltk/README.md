@@ -5,7 +5,8 @@ Kotlin/Jetpack Compose app — offline RAG tutoring assistant for Android.
 ## Status
 
 - Phase 3 (Android port): **Complete** — full pipeline running on physical device
-- Phase 4 (UI/UX): **In progress** — proper Compose screens replacing smoke-test scaffold
+- Phase 4 (TTFT measurement): **Complete** — device-side instrumentation and measurement logs are in place
+- Phase 5 (perceived TTFT): **Next** — first-token UI flush and low-risk latency polish
 
 ## Build
 
@@ -47,4 +48,16 @@ hf download LiquidAI/LFM2.5-350M-GGUF LFM2.5-350M-Q4_K_M.gguf
 
 ## Known issues
 
-- **Time to first token** — dominated by LLM weight loading and prefill. Warm-up is triggered at document load (`ChatViewModel.loadDocument`) to reduce perceived latency.
+- **Time to first token** — dominated by prompt prefill on the current Llamatik path. Recent Samsung SM-A047F runs show visible TTFT around 105-118 seconds even with warm-up enabled.
+- **Llamatik JNI UTF-8 crash** — `LlamaBridge.generateStream()` on 0.18.0 can abort in JNI when non-ASCII prompt/context text crosses the stream boundary. The app now sanitizes prompt text to ASCII before generation as a stability workaround.
+
+## Measurement notes
+
+- Use `adb logcat EdgeTutorPerf:D LlamaEngine:D AndroidRuntime:E *:S` for device measurement runs.
+- Key events:
+  - `query_stage_timing`
+  - `prompt_metrics`
+  - `prompt_sanitization`
+  - `llm_decode_first_token`
+  - `llm_decode_total`
+- Current measurements show retrieval and embedding are cheap; native first-token latency is the main bottleneck.
