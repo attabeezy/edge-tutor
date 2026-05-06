@@ -120,7 +120,7 @@ Exit gate: chosen prompt policy passes the existing grounded-answer and refusal 
 - [ ] Benchmark chunk caps of 500, 800, and 1200 chars per retrieved chunk.
 - [ ] Start with candidate default: `top_k=2`, max 800 chars per chunk.
 - [ ] Remove redundant instruction text between `ChatViewModel.buildPrompt()` and `LlamaEngine.buildChatPrompt()`.
-- [ ] Keep the system prompt short: current `Be concise.` is good.
+- [ ] Keep the system prompt short; Python currently uses `Be concise.`, while Android adds ASCII-only wording in `LlamaEngine`.
 - [ ] Preserve the out-of-scope gate; it prevents unnecessary LLM calls and is more valuable than micro-optimizing generation.
 - [ ] Do not reduce `num_predict`/`maxTokens` as the first TTFT fix; it mainly reduces full response time.
 
@@ -241,7 +241,7 @@ TTFT is expected to be dominated by model load and prompt prefill. Cut prompt si
 ### Build Instructions (Quick Start)
 **App: android-ltk (Llamatik CPU)**
 1. **Open** `android-ltk/` in Android Studio.
-2. **Sync Gradle** and ensure `arctic.onnx`, `vocab.txt`, and `.gguf` are in `app/src/main/assets/`.
+2. **Sync Gradle** and ensure model assets are present in `app/src/main/assets/`. `python scripts/export_onnx.py` copies `arctic.onnx` and `vocab.txt`; copy or download the `.gguf` manually.
 3. **Run** on physical device or API 34+ emulator.
 
 ### Maintenance & Utility
@@ -254,6 +254,6 @@ TTFT is expected to be dominated by model load and prompt prefill. Cut prompt si
 ### Troubleshooting & "Plan B"
 - **Llamatik JNI UTF-8 Crash:** If the app aborts during `generateStream()` with `NewStringUTF`, keep the prompt sanitization path enabled and treat newer Llamatik versions as an upgrade experiment, not an immediate fix.
 - **OOM (Out of Memory) Issues:** If LFM2.5 still crashes on low-end hardware:
-  1. Swap to Gemma-3-270M: Copy `models/gemma-3-270m-it-Q4_K_M.gguf` (242 MB) to assets and update `LlamaEngine.kt`.
+  1. Swap to Gemma-3-270M: copy the chosen Gemma GGUF from `models/` to assets and update `MODEL_ASSET` in `LlamaEngine.kt`.
   2. Clear Storage: Uninstall the app or "Clear Data" to remove orphaned model copies.
 - **Python Tests:** Import failures in `.venv`. Activate environment before running `pytest`.

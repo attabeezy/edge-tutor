@@ -13,15 +13,15 @@ An offline RAG (Retrieval-Augmented Generation) tutoring assistant for Android. 
 
 ```
 edge-tutor/
-├── src/                    # Python MVP prototype
-│   ├── ingestion/          # PDF parsing + chunking + embedding
-│   └── rag/                # Query pipeline + REPL
-├── scripts/                # Utility scripts (ONNX export)
-├── tests/                  # Python unit tests + retrieval eval
-├── models/                 # Shared model files (git-ignored — copy manually)
-├── data/                   # Python runtime: raw PDFs and FAISS indices
-├── android-ltk/            # Android app - Llamatik/llama.cpp backend
-└── PROJECT.md              # Specification, status, and roadmap
+|-- src/                    # Python MVP prototype
+|   |-- ingestion/          # PDF parsing + chunking + embedding
+|   `-- rag/                # Query pipeline + REPL
+|-- scripts/                # Utility scripts (ONNX export)
+|-- tests/                  # Python unit tests + retrieval eval
+|-- models/                 # Shared model files (git-ignored - copy manually)
+|-- data/                   # Python runtime: raw PDFs and FAISS indices
+|-- android-ltk/            # Android app - Llamatik/llama.cpp backend
+`-- PROJECT.md              # Specification, status, and roadmap
 ```
 
 ## Quick Start

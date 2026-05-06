@@ -279,8 +279,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 )
 
                 // 5. Add a placeholder ASSISTANT message; stream tokens into it.
-                //    Tokens are buffered and flushed to StateFlow every 50 ms to
-                //    avoid a full list copy + String allocation on every token.
+                //    The first visible token is flushed immediately for perceived TTFT;
+                //    later tokens are buffered every 50 ms to avoid Compose churn.
                 _messages.value += ChatMessage(
                     role    = Role.ASSISTANT,
                     text    = "",
@@ -288,6 +288,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 )
 
                 val tokenBuf = StringBuilder()
+                var firstTokenFlushed = false
                 var uiVisibleTtftLogged = false
                 fun flushAssistantChunk(chunk: String, source: String) {
                     if (chunk.isEmpty()) return
@@ -327,13 +328,30 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
                 try {
                     llm.generate(sanitizedPrompt.value) { token ->
-                        synchronized(tokenBuf) { tokenBuf.append(token) }
+                        val immediateChunk = synchronized(tokenBuf) {
+                            if (!firstTokenFlushed && token.isNotBlank()) {
+                                firstTokenFlushed = true
+                                val chunk = tokenBuf.toString() + token
+                                tokenBuf.clear()
+                                chunk
+                            } else {
+                                tokenBuf.append(token)
+                                null
+                            }
+                        }
+                        if (immediateChunk != null) {
+                            flushAssistantChunk(immediateChunk, source = "first_token_flush")
+                        }
                     }
                 } finally {
                     flushJob?.cancel()
                     flushJob = null
-                    // Final flush — emit any tokens that arrived in the last <50 ms window.
-                    val remaining = synchronized(tokenBuf) { tokenBuf.toString() }
+                    // Final flush - emit any tokens that arrived in the last <50 ms window.
+                    val remaining = synchronized(tokenBuf) {
+                        val chunk = tokenBuf.toString()
+                        tokenBuf.clear()
+                        chunk
+                    }
                     if (remaining.isNotEmpty()) {
                         flushAssistantChunk(remaining, source = "final_flush")
                     }

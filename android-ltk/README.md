@@ -10,13 +10,13 @@ Kotlin/Jetpack Compose app — offline RAG tutoring assistant for Android.
 
 ## Build
 
-1. Open `android-ltk/` in Android Studio (File → Open)
+1. Open `android-ltk/` in Android Studio (File -> Open)
 2. Copy model files into `android-ltk/app/src/main/assets/` (see table below)
-3. Gradle sync → Run on device
+3. Gradle sync -> Run on device
 
 ## Model files required in `assets/`
 
-Not tracked in git — store working copies in `models/` at the repo root and copy before building.
+Not tracked in git - store working copies in `models/` at the repo root. `python scripts/export_onnx.py` copies `arctic.onnx` and `vocab.txt`; copy or download the GGUF manually before building.
 
 | File | Source | Size |
 |---|---|---|
