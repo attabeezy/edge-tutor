@@ -93,16 +93,28 @@ Exit gate: one device run can report query embed time, retrieval time, prompt si
 Current findings on Samsung SM-A047F:
 - Warm-up and query instrumentation is working end to end in Logcat.
 - Retrieval and embedding are cheap relative to TTFT.
-- Prompt prefill dominates latency; visible TTFT is still roughly 105-118 s on `Calculus Made Easy`.
+- Prompt prefill dominated the Phase 4 baseline; visible TTFT was roughly 105-118 s on `Calculus Made Easy`.
 - A Llamatik JNI `NewStringUTF` crash was reproduced and mitigated with prompt sanitization on the app side.
+- May 6 first-token flush run confirmed the UI buffer is no longer the main TTFT bottleneck:
+    - `prompt_chars=6080`, `estimated_prompt_tokens=1520`, `top_k=3`
+    - `chunk_char_counts=1980,1950,2005`, `final_context_chars=5931`
+    - `llm_native_ttft_ms=104178`
+    - `ui_visible_ttft_ms=104906`, `source=first_token_flush`
+    - Native first token to visible first token gap was roughly 728 ms; the remaining work is prompt/prefill reduction.
+- May 6 prompt-prefill run confirmed the balanced Android policy materially reduced TTFT:
+    - `retrieval_search k=5`, `kept_k=2`, `context_char_cap=800`
+    - `prompt_chars` roughly 1,700 and `estimated_prompt_tokens` roughly 425
+    - `llm_native_ttft_ms` roughly 23,800-26,000
+    - `ui_visible_ttft_ms` roughly 24,300-26,700
+    - Follow-up routing now adds a small previous-question context and logs `query_rewrite`.
 
-### Phase 5: Low-Risk Perceived TTFT Improvements - Next
+### Phase 5: Low-Risk Perceived TTFT Improvements - In Progress
 Goal: reduce visible latency without changing model choice or retrieval architecture.
 
 Exit gate: visible TTFT improves or stays stable without increasing crashes/OOMs on Samsung SM-A047F.
 
-- [ ] Emit the first assistant token immediately, then resume the current 50 ms buffered UI flushing.
-- [ ] Keep batched flushing after the first token to avoid Compose churn.
+- [x] Emit the first assistant token immediately, then resume the current 50 ms buffered UI flushing.
+- [x] Keep batched flushing after the first token to avoid Compose churn.
 - [ ] Move LLM native model load earlier than document selection when memory allows.
 - [ ] Keep document-load warm-up for dummy decode, but avoid hiding native load inside it.
 - [ ] Benchmark sequential vs concurrent document-load warm-up:
@@ -111,18 +123,52 @@ Exit gate: visible TTFT improves or stays stable without increasing crashes/OOMs
 - [ ] Benchmark thresholds below 120 MB for embedder release.
 - [ ] If release is frequent, test delayed embedder close after generation rather than immediate close before generation.
 
-### Phase 6: Prompt / Prefill Optimization
+### Phase 6: Prompt / Prefill Optimization - Implemented
 Goal: reduce native TTFT by shrinking prompt prefill cost while preserving grounded answer quality.
 
-Exit gate: chosen prompt policy passes the existing grounded-answer and refusal checks with lower median native TTFT.
+Exit gate: chosen prompt policy passes grounded-answer, general-reasoning, and unrelated-query checks with lower median native TTFT.
 
-- [ ] Benchmark `top_k=1`, `top_k=2`, and `top_k=3`.
+Immediate target from May 6 run:
+- Current query prompt is too large for the target device: roughly 6k chars / 1.5k estimated prompt tokens from three ~2k-char chunks.
+- First implementation should reduce prompt size before changing model, runtime, or answer length.
+- Candidate default: retrieve more candidates for filtering, but pass fewer and shorter chunks into the final prompt.
+
+Retrieval and context policy:
+- [x] Change retrieval from fixed `top_k=3` final context to candidate retrieval plus filtering:
+    - retrieve `RETRIEVAL_CANDIDATE_K=5`
+    - filter chunks below a similarity threshold before prompt construction
+    - cap each included chunk with `MAX_CONTEXT_CHARS_PER_CHUNK=800`
+    - target prompt size around 1,500-2,500 chars before testing smaller caps
 - [ ] Benchmark chunk caps of 500, 800, and 1200 chars per retrieved chunk.
-- [ ] Start with candidate default: `top_k=2`, max 800 chars per chunk.
-- [ ] Remove redundant instruction text between `ChatViewModel.buildPrompt()` and `LlamaEngine.buildChatPrompt()`.
-- [ ] Keep the system prompt short; Python currently uses `Be concise.`, while Android adds ASCII-only wording in `LlamaEngine`.
-- [ ] Preserve the out-of-scope gate; it prevents unnecessary LLM calls and is more valuable than micro-optimizing generation.
+- [ ] Benchmark final kept chunk counts of 1, 2, and 3 after similarity filtering.
+- [x] Start with balanced default: retrieve 5, keep up to 2 relevant chunks, max 800 chars per kept chunk.
+- [x] Log `retrieved_k`, `kept_k`, `max_sim`, `kept_sim_scores`, `dropped_sim_scores`, `context_char_cap`, final context chars, and prompt chars.
+
+Answer routing policy:
+- [x] Replace the current binary in-scope/out-of-scope behavior with three routes:
+    - `grounded`: one or more chunks pass the context similarity threshold; answer using document passages only.
+    - `general_reasoning`: document chunks are weak, but the question is still academic, computational, mathematical, scientific, or tutoring-related; answer from model reasoning and clearly say the document did not provide strong support.
+    - `unrelated`: the question is weakly related to the document and not a viable tutoring/reasoning request; refuse before calling the LLM.
+- [x] Keep a refusal gate for completely unrelated queries so the app does not waste generation time on irrelevant prompts.
+- [x] Add query-route logging: `query_route=GROUNDED|GENERAL_REASONING|UNRELATED`, similarity values, lexical overlap, and route reason.
+- [x] Add follow-up query rewrite logging with `query_rewrite` for lightweight previous-question context.
+- [ ] Add evaluation questions for all three routes:
+    - grounded document question with high-similarity chunks
+    - general reasoning question with weak document matches but educational intent
+    - unrelated/non-tutoring question that should be rejected before generation
+
+Prompt templates:
+- [x] Use a short grounded prompt when `query_route=GROUNDED`; do not include weak chunks.
+- [x] Use a short general-reasoning prompt when `query_route=GENERAL_REASONING`; explicitly state that the loaded document did not provide strong support.
+- [x] Keep unrelated refusals as direct app responses without an LLM call.
+- [x] Remove redundant instruction text between `ChatViewModel` prompt construction and `LlamaEngine.buildChatPrompt()`.
+- [x] Keep the Android system prompt short while preserving ASCII-only wording in `LlamaEngine`.
+- [x] Preserve the unrelated-query gate; it prevents unnecessary LLM calls and is more valuable than micro-optimizing generation.
 - [ ] Do not reduce `num_predict`/`maxTokens` as the first TTFT fix; it mainly reduces full response time.
+
+Remaining Phase 6 risks:
+- Answer quality still depends on the small model; worked-example prompts now explicitly ask for derivative -> integrate-back -> check structure, but more device samples are needed.
+- The strong semantic match threshold is intentionally general, not subject-specific; tune from logs if unrelated queries begin grounding too often.
 
 ### Phase 7: Runtime / Library Experiments
 Goal: test whether newer Llamatik/runtime features improve TTFT, memory, or follow-up performance.

@@ -6,7 +6,8 @@ Kotlin/Jetpack Compose app — offline RAG tutoring assistant for Android.
 
 - Phase 3 (Android port): **Complete** — full pipeline running on physical device
 - Phase 4 (TTFT measurement): **Complete** — device-side instrumentation and measurement logs are in place
-- Phase 5 (perceived TTFT): **Next** — first-token UI flush and low-risk latency polish
+- Phase 5 (perceived TTFT): **Partially complete** — first-token UI flush is implemented
+- Phase 6 (prompt/prefill): **Implemented** — balanced context budget and query routing are active
 
 ## Build
 
@@ -48,7 +49,8 @@ hf download LiquidAI/LFM2.5-350M-GGUF LFM2.5-350M-Q4_K_M.gguf
 
 ## Known issues
 
-- **Time to first token** — dominated by prompt prefill on the current Llamatik path. Recent Samsung SM-A047F runs show visible TTFT around 105-118 seconds even with warm-up enabled.
+- **Time to first token** — dominated by native prompt prefill on the current Llamatik path. The Phase 4 baseline on Samsung SM-A047F was roughly 105-118 seconds visible TTFT with ~6k-char prompts. The balanced prompt policy reduced tested prompts to roughly 1.7k chars and visible TTFT to roughly 24-27 seconds.
+- **Small-model answer quality** — follow-up and worked-example prompts are now more explicit, but answer quality still needs device sampling across subjects.
 - **Llamatik JNI UTF-8 crash** — `LlamaBridge.generateStream()` on 0.18.0 can abort in JNI when non-ASCII prompt/context text crosses the stream boundary. The app now sanitizes prompt text to ASCII before generation as a stability workaround.
 
 ## Measurement notes
@@ -58,6 +60,9 @@ hf download LiquidAI/LFM2.5-350M-GGUF LFM2.5-350M-Q4_K_M.gguf
   - `query_stage_timing`
   - `prompt_metrics`
   - `prompt_sanitization`
+  - `query_route`
+  - `query_rewrite`
   - `llm_decode_first_token`
   - `llm_decode_total`
-- Current measurements show retrieval and embedding are cheap; native first-token latency is the main bottleneck.
+- `prompt_metrics` includes retrieved/kept counts, similarity scores, context cap, final context chars, prompt chars, estimated prompt tokens, and query route.
+- Current measurements show retrieval and embedding are cheap; native prompt prefill is the main first-token bottleneck.
