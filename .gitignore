@@ -77,9 +77,6 @@ android/app/src/main/assets/*.txt
 android-ltk/app/src/main/assets/*.gguf
 android-ltk/app/src/main/assets/*.onnx
 android-ltk/app/src/main/assets/*.txt
-android-mlc/app/src/main/assets/*.gguf
-android-mlc/app/src/main/assets/*.onnx
-android-mlc/app/src/main/assets/*.txt
 
 # Android build artifacts & local config
 android/.gradle/
@@ -92,19 +89,10 @@ android-ltk/build/
 android-ltk/app/build/
 android-ltk/local.properties
 android-ltk/.idea/
-android-mlc/.gradle/
-android-mlc/build/
-android-mlc/app/build/
-android-mlc/local.properties
-android-mlc/.idea/
-android-mlc/dist/
 notebooks/
 
 # Python/Linting
 .ruff_cache/
-
-# External dependencies (if not managed via submodules)
-mlc-llm/
 
 # Session/Project tracking docs (if temporary)
 next_steps_gemini.md
