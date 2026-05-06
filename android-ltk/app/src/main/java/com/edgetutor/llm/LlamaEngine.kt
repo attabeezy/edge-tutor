@@ -36,7 +36,7 @@ class LlamaEngine(private val context: Context) : LlmEngine {
     companion object {
         private const val TAG = "LlamaEngine"
         private const val MODEL_ASSET        = "LFM2.5-350M-Q4_K_M.gguf"
-        private const val SYSTEM_PROMPT      = "Be concise. Use plain ASCII only. Avoid special symbols."
+        private const val SYSTEM_PROMPT      = "Be concise. ASCII only."
         private const val MAX_RESPONSE_CHARS = 3_000
         private const val WARM_UP_PROMPT     = "Reply with the word ready."
         private val STOP_SEQUENCES = listOf(
