@@ -29,6 +29,17 @@ _STOPWORDS = frozenset(
     "to for with by from about into than or and but if not no so".split()
 )
 
+# Academic/tutoring vocabulary used to distinguish GENERAL_REASONING from UNRELATED.
+# Mirrors ChatViewModel.kt ACADEMIC_TERMS — keep in sync.
+_ACADEMIC_TERMS = frozenset(
+    "academic algebra analyze answer biology calculate calculus chemistry "
+    "compare concept define derivative differentiate differential equation "
+    "example explain factor formula function geometry graph history "
+    "homework integral interpret lesson limit math physics practice "
+    "problem proof reading science slope solve study summarize teach "
+    "theorem tutor understand word".split()
+)
+
 
 # ------------------------------------------------------------------
 # Retrieve
@@ -44,7 +55,7 @@ def retrieve_chunks(question: str, doc_name: str, top_k: int = TOP_K, embed_mode
         print(f"[retrieve]  got {len(results)} chunks  ({elapsed:.3f}s)")
         for i, (chunk, dist) in enumerate(results, 1):
             preview = chunk[:80].replace("\n", " ")
-            print(f"[retrieve]  chunk {i} (dist={dist:.3f}): {preview!r}")
+            print(f"[retrieve]  chunk {i} (dist={dist:.3f}): {preview!r}".encode("ascii", "replace").decode())
     chunks = [chunk for chunk, _dist in results]
     min_dist = min(dist for _chunk, dist in results)
     return chunks, min_dist
@@ -53,6 +64,17 @@ def retrieve_chunks(question: str, doc_name: str, top_k: int = TOP_K, embed_mode
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+def _is_academic_question(question: str) -> bool:
+    """True when the question uses academic/tutoring vocabulary.
+
+    Used to distinguish GENERAL_REASONING (answer from model knowledge) from
+    UNRELATED (hard refusal) when retrieved chunks are too weak to ground an
+    answer.  Mirrors ChatViewModel.kt isAcademicQuestion() — keep in sync.
+    """
+    tokens = {w for w in re.findall(r"[a-z]+", question.lower()) if w not in _STOPWORDS}
+    return bool(tokens & _ACADEMIC_TERMS)
+
+
 def _has_lexical_overlap(question: str, chunks: list[str]) -> bool:
     q_tokens = {w for w in re.findall(r"[a-z]+", question.lower()) if w not in _STOPWORDS}
     # Require fewer matches when the question itself has few content words
@@ -125,14 +147,32 @@ def ask(
         if verbose:
             print(f"[gate]      lexical_ok={_has_lexical_overlap(question, chunks)}  min_dist={min_dist:.3f}  threshold={MAX_RELEVANT_DISTANCE}", flush=True)
         if out_of_scope:
-            response = "Not covered in this document."
-            if stream:
-                print(response)
-            history.append({"role": "user",      "content": question})
-            history.append({"role": "assistant",  "content": response})
-            return response, history
-        prompt = _build_prompt(question, chunks)
-        history.append({"role": "user", "content": prompt})
+            if _is_academic_question(question):
+                # GENERAL_REASONING: document doesn't cover this, but the question
+                # is academic — answer from model knowledge with a disclaimer.
+                if verbose:
+                    print("[route]     GENERAL_REASONING (academic fallback)", flush=True)
+                prompt = (
+                    "The loaded document did not provide strong support for this question. "
+                    "Answer as a concise tutor.\n"
+                    f"Question: {question}"
+                )
+                history.append({"role": "user", "content": prompt})
+            else:
+                # UNRELATED: refuse without calling the LLM.
+                if verbose:
+                    print("[route]     UNRELATED (refusal)", flush=True)
+                response = "Not covered in this document."
+                if stream:
+                    print(response)
+                history.append({"role": "user",      "content": question})
+                history.append({"role": "assistant",  "content": response})
+                return response, history
+        else:
+            if verbose:
+                print("[route]     GROUNDED", flush=True)
+            prompt = _build_prompt(question, chunks)
+            history.append({"role": "user", "content": prompt})
 
     if verbose:
         print(f"[llm]       sending to {llm_model}...", flush=True)

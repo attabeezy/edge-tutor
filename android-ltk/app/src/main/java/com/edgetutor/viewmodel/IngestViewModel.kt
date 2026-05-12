@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -113,7 +114,9 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
 
                 index.startAppend(indexFile, embedder.dim)
 
-                PdfExtractor.extractPages(getApplication(), uri, pageWindow).collect { window ->
+                // buffer(1): the PDF stripper runs concurrently with ONNX embedding —
+                // while batch N is being embedded, the next page window is extracted.
+                PdfExtractor.extractPages(getApplication(), uri, pageWindow).buffer(1).collect { window ->
                     ensureActive()
                     totalPages = window.totalPages
                     isScanned = window.isLikelyScanned

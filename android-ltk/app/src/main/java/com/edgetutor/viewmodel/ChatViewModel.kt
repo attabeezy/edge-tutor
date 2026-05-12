@@ -17,8 +17,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
@@ -33,6 +36,12 @@ data class ChatMessage(
 
 enum class Role { USER, ASSISTANT }
 
+sealed class ThinkingUiState {
+    object Idle : ThinkingUiState()
+    object Active : ThinkingUiState()
+    data class Done(val durationMs: Long) : ThinkingUiState()
+}
+
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val llm: LlmEngine by lazy { LlamaEngine(app) }
@@ -42,7 +51,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         // is ready on disk by the time the user selects a document and warmUp() fires.
         // On subsequent launches the file already exists and this completes instantly.
         viewModelScope.launch(Dispatchers.IO) {
-            try { llm.copyModelIfNeeded() }
+            try {
+                llm.copyModelIfNeeded()
+                // Load native weights immediately after copy so the expensive
+                // LlamaBridge.initGenerateModel() is hidden behind the document-picker
+                // screen rather than paid at document selection time.
+                llm.initNativeModel()
+            }
             catch (e: Exception) { _errorMessage.value = "Model unavailable: ${e.message}" }
         }
     }
@@ -50,11 +65,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _messages    = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages
 
-    private val _isThinking  = MutableStateFlow(false)
-    val isThinking: StateFlow<Boolean> = _isThinking
-
-    private val _lastThinkingDurationMs = MutableStateFlow<Long?>(null)
-    val lastThinkingDurationMs: StateFlow<Long?> = _lastThinkingDurationMs.asStateFlow()
+    private val _thinkingUiState = MutableStateFlow<ThinkingUiState>(ThinkingUiState.Idle)
+    val thinkingUiState: StateFlow<ThinkingUiState> = _thinkingUiState.asStateFlow()
+    /** Derived for canSend / inputEnabled logic — no change needed in UI. */
+    val isThinking: StateFlow<Boolean> = _thinkingUiState
+        .map { it is ThinkingUiState.Active }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val _isWarmingUp = MutableStateFlow(false)
     val isWarmingUp: StateFlow<Boolean> = _isWarmingUp
@@ -86,7 +102,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private const val MAX_KEPT_CONTEXT_CHUNKS = 2
         private const val MAX_CONTEXT_CHARS_PER_CHUNK = 800
         private const val MAX_FOLLOWUP_CONTEXT_CHARS = 180
-        private const val STRONG_SEMANTIC_MATCH_SIM = 0.55f
+        private const val MAX_ANSWER_CONTEXT_CHARS = 250
+        private const val STRONG_SEMANTIC_MATCH_SIM = 0.70f
 
         private val STOPWORDS = setOf(
             "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
@@ -151,7 +168,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun loadDocument(doc: DocumentEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             _isWarmingUp.value = true
-            _lastThinkingDurationMs.value = null
+            _thinkingUiState.value = ThinkingUiState.Idle
             try {
                 val file = File(getApplication<Application>().filesDir, "${doc.id}.idx")
                 if (!file.exists()) { _isWarmingUp.value = false; return@launch }
@@ -202,14 +219,20 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val queryStartNs = System.nanoTime()
             val docId = activeDoc?.id ?: -1L
             var shouldPersistThinkingDuration = false
-            _lastThinkingDurationMs.value = null
-            _isThinking.value = true
+            _thinkingUiState.value = ThinkingUiState.Active
             val priorMessages = _messages.value
             _messages.value  += ChatMessage(Role.USER, question)
             try {
                 val app = getApplication<Application>()
                 val retrievalQuestion = buildRetrievalQuestion(question, priorMessages)
-                val conversationContext = buildConversationContext(priorMessages)
+                // Only carry conversation context into the prompt for genuine follow-up
+                // questions. Fresh questions don't need it, and the extra tokens push
+                // prefill time past the 30s TTFT exit gate (O(n²) attention cost).
+                val conversationContext = if (isFollowUpQuestion(question)) {
+                    buildConversationContext(priorMessages)
+                } else {
+                    ""
+                }
                 // 1. Embed question using the cached ORT session.
                 //    Normal-memory devices keep it hot across turns; low-memory
                 //    devices still release it around generation to reduce pressure.
@@ -382,6 +405,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     EdgeTutorPerf.log("embedder_release_before_generation", "doc_id" to docId)
                     emb.close()
                     embedder = null
+                    // Memory Handover: explicit GC and small delay to let the OS
+                    // reclaim the ~23MB ONNX session memory before the LLM demands 300MB+.
+                    System.gc()
+                    delay(200)
                 }
 
                 try {
@@ -435,18 +462,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 _errorMessage.value = "Query failed: ${e.message}"
             } finally {
-                val thinkingDurationMs =
-                    if (shouldPersistThinkingDuration) SystemClock.elapsedRealtime() - thinkingStartMs
-                    else null
-                _lastThinkingDurationMs.value = thinkingDurationMs
-                _isThinking.value = false
+                _thinkingUiState.value =
+                    if (shouldPersistThinkingDuration)
+                        ThinkingUiState.Done(SystemClock.elapsedRealtime() - thinkingStartMs)
+                    else
+                        ThinkingUiState.Idle
             }
         }
     }
 
     fun resetHistory() {
         _messages.value = emptyList()
-        _lastThinkingDurationMs.value = null
+        _thinkingUiState.value = ThinkingUiState.Idle
     }
 
     // ---------------------------------------------------------------------------
@@ -573,12 +600,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun buildConversationContext(priorMessages: List<ChatMessage>): String {
-        val previousUserQuestion = priorMessages
-            .lastOrNull { it.role == Role.USER }
-            ?.text
-            ?.take(MAX_FOLLOWUP_CONTEXT_CHARS)
-            ?: return ""
-        return "Previous question: $previousUserQuestion"
+        val lastUser = priorMessages.lastOrNull { it.role == Role.USER } ?: return ""
+        val lastAssistant = priorMessages.lastOrNull { it.role == Role.ASSISTANT }
+        val sb = StringBuilder("Previous question: ${lastUser.text.take(MAX_FOLLOWUP_CONTEXT_CHARS)}")
+        if (lastAssistant != null && lastAssistant.text.isNotBlank()) {
+            sb.append("\nPrevious answer: ${lastAssistant.text.take(MAX_ANSWER_CONTEXT_CHARS)}")
+        }
+        return sb.toString()
     }
 
     private fun isFollowUpQuestion(question: String): Boolean {

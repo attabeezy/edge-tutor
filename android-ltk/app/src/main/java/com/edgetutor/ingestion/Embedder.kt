@@ -64,8 +64,8 @@ class Embedder(context: Context) : AutoCloseable {
                 addXnnpack(emptyMap())
                 setIntraOpNumThreads(1)
             } catch (_: Exception) {
-                // XNNPACK unavailable — fall back to 2 ORT threads.
-                setIntraOpNumThreads(2)
+                // XNNPACK unavailable — fall back to 4 ORT threads.
+                setIntraOpNumThreads(4)
             }
             // Disable idle spinning to reduce CPU burn on battery-constrained devices.
             addConfigEntry("session.intra_op.allow_spinning", "0")

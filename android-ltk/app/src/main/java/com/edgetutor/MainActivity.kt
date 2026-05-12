@@ -58,6 +58,7 @@ import com.edgetutor.viewmodel.ChatMessage
 import com.edgetutor.viewmodel.ChatViewModel
 import com.edgetutor.viewmodel.IngestViewModel
 import com.edgetutor.viewmodel.Role
+import com.edgetutor.viewmodel.ThinkingUiState
 import kotlinx.coroutines.delay
 
 private val AppGreen = Color(0xFF2F7D4B)
@@ -106,7 +107,7 @@ fun EdgeTutorApp(
     val progress by ingestVm.progress.collectAsState()
     val messages by chatVm.messages.collectAsState()
     val thinking by chatVm.isThinking.collectAsState()
-    val lastThinkingDurationMs by chatVm.lastThinkingDurationMs.collectAsState()
+    val thinkingUiState by chatVm.thinkingUiState.collectAsState()
     val warmingUp by chatVm.isWarmingUp.collectAsState()
     val errorMsg by chatVm.errorMessage.collectAsState()
     val activeDocId by chatVm.activeDocumentId.collectAsState()
@@ -179,8 +180,7 @@ fun EdgeTutorApp(
             modifier = Modifier.weight(1f),
             currentDoc = currentDoc,
             messages = messages,
-            thinking = thinking,
-            lastThinkingDurationMs = lastThinkingDurationMs,
+            thinkingUiState = thinkingUiState,
             warmingUp = warmingUp,
         )
 
@@ -300,8 +300,7 @@ private fun ChatFeed(
     modifier: Modifier = Modifier,
     currentDoc: DocumentEntity?,
     messages: List<ChatMessage>,
-    thinking: Boolean,
-    lastThinkingDurationMs: Long?,
+    thinkingUiState: ThinkingUiState,
     warmingUp: Boolean,
 ) {
     if (currentDoc == null) {
@@ -317,14 +316,10 @@ private fun ChatFeed(
         items(messages) { message ->
             MessageRow(msg = message)
         }
-        if (thinking) {
-            item {
-                ThinkingNote()
-            }
-        } else if (lastThinkingDurationMs != null) {
-            item {
-                StatusNote("thought for ${formatElapsedDuration(lastThinkingDurationMs)}")
-            }
+        when (val ts = thinkingUiState) {
+            is ThinkingUiState.Active -> item { ThinkingNote() }
+            is ThinkingUiState.Done   -> item { StatusNote("thought for ${formatElapsedDuration(ts.durationMs)}") }
+            ThinkingUiState.Idle      -> { /* nothing */ }
         }
         if (warmingUp) {
             item {
@@ -415,15 +410,18 @@ private fun StatusNote(text: String) {
 @Composable
 private fun ThinkingNote() {
     var dotCount by remember { mutableIntStateOf(1) }
+    val startMs = remember { System.currentTimeMillis() }
+    var elapsedSecs by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         while (true) {
             delay(450)
             dotCount = if (dotCount == 3) 1 else dotCount + 1
+            elapsedSecs = ((System.currentTimeMillis() - startMs) / 1000).toInt()
         }
     }
 
-    StatusNote("thinking${".".repeat(dotCount)}")
+    StatusNote("thinking${".".repeat(dotCount)} (${elapsedSecs}s)")
 }
 
 private fun formatElapsedDuration(durationMs: Long): String {

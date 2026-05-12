@@ -21,6 +21,14 @@ interface LlmEngine : AutoCloseable {
     suspend fun copyModelIfNeeded() {}
 
     /**
+     * Load the native model weights into memory without running a dummy decode.
+     * Called at app startup (after [copyModelIfNeeded]) so the expensive native init
+     * is hidden behind the document-picker screen rather than paid at first query.
+     * Safe to call multiple times. Default implementation is a no-op.
+     */
+    suspend fun initNativeModel() {}
+
+    /**
      * Pre-load the model into memory so the first [generate] call has no loading overhead.
      * Safe to call multiple times. Default implementation is a no-op.
      */

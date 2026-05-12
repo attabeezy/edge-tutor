@@ -117,6 +117,10 @@ class LlamaEngine(private val context: Context) : LlmEngine {
         }
     }
 
+    override suspend fun initNativeModel() {
+        ensureModelLoaded()
+    }
+
     override suspend fun generate(prompt: String, onToken: (String) -> Unit): String =
         withGenerateLock(caller = "query") {
             withContext(Dispatchers.IO) {
