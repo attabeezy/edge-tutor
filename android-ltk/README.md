@@ -33,25 +33,25 @@ hf download LiquidAI/LFM2.5-350M-GGUF LFM2.5-350M-Q4_K_M.gguf
 
 | Library | Version | Purpose |
 |---|---|---|
-| Llamatik | 0.18.0 | llama.cpp wrapper for GGUF inference |
+| Llamatik | 1.7.0 | llama.cpp wrapper for GGUF inference |
 | ONNX Runtime Mobile | 1.22.0 | Embedding model inference (16 KB page-aligned) |
 | PdfBox Android | 2.0.27.0 | PDF text extraction |
 | Jetpack Compose BOM | 2024.09 | UI |
 | Room | 2.7.0 | Document metadata persistence |
-| compileSdk | 36 | Required by Llamatik 0.18.0 |
+| compileSdk | 36 | Android build target |
 
-## Llamatik 0.18.0 API notes
+## Llamatik API notes
 
 - Class: `com.llamatik.library.platform.LlamaBridge` (singleton object)
 - Streaming: `LlamaBridge.generateStream(prompt, object : GenStream { ... })`
 - Callbacks: `onDelta(text)`, `onComplete()`, `onError(message)` — no lambda overload
-- Context reset: `LlamaBridge.sessionReset()` — documented but native JNI implementation is missing in 0.18.0 (`UnsatisfiedLinkError`); do NOT call it
+- Context reset: `LlamaBridge.sessionReset()` is intentionally not called; generation is serialized with the app-level mutex instead.
 
 ## Known issues
 
 - **Time to first token** — dominated by native prompt prefill on the current Llamatik path. The Phase 4 baseline on Samsung SM-A047F was roughly 105-118 seconds visible TTFT with ~6k-char prompts. The balanced prompt policy reduced tested prompts to roughly 1.7k chars and visible TTFT to roughly 24-27 seconds.
 - **Small-model answer quality** — follow-up and worked-example prompts are now more explicit, but answer quality still needs device sampling across subjects.
-- **Llamatik JNI UTF-8 crash** — `LlamaBridge.generateStream()` on 0.18.0 can abort in JNI when non-ASCII prompt/context text crosses the stream boundary. The app now sanitizes prompt text to ASCII before generation as a stability workaround.
+- **Llamatik JNI UTF-8 crash** — `LlamaBridge.generateStream()` can abort in JNI when invalid UTF-8 reaches `NewStringUTF`. The app sanitizes prompts in `ChatViewModel` and again at the `LlamaEngine` native boundary, then sanitizes Kotlin-visible streamed deltas before UI use. If native still aborts before `onDelta`, the fix must be in Llamatik itself via an upgrade or fork.
 
 ## Measurement notes
 
@@ -60,6 +60,8 @@ hf download LiquidAI/LFM2.5-350M-GGUF LFM2.5-350M-Q4_K_M.gguf
   - `query_stage_timing`
   - `prompt_metrics`
   - `prompt_sanitization`
+  - `llm_prompt_sanitization`
+  - `llm_output_sanitization`
   - `query_route`
   - `query_rewrite`
   - `llm_decode_first_token`

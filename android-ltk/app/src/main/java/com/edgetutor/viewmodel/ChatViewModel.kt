@@ -15,6 +15,8 @@ import com.edgetutor.store.FlatIndex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -90,7 +92,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
          * Below this free-memory threshold we keep the previous aggressive behavior
          * of releasing the embedder around generation to reduce memory pressure.
          */
-        private const val LOW_MEM_THRESHOLD_MB = 120L
+        private const val LOW_MEM_THRESHOLD_MB = 200L
+        private const val EMBEDDER_CLOSE_DELAY_MS = 30_000L  // 30-second idle grace window
         /**
          * Cosine similarity floor for in-scope queries.
          * Derived from Python MAX_RELEVANT_DISTANCE=1.4 on normalized vectors:
@@ -142,10 +145,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     /**
      * Reused across queries to avoid paying ORT session init cost per turn.
-     * Closed just before llm.generate() fires (to free ~23 MB), then reopened
-     * after generation completes so the next query finds it ready.
+     * On low-memory devices the session is closed just before llm.generate()
+     * fires (to free ~23 MB), then eagerly recreated post-generation and kept
+     * alive for [EMBEDDER_CLOSE_DELAY_MS] via [embedderCloseJob] so rapid
+     * follow-up queries find it warm without a cold-start penalty.
      */
     private var embedder: Embedder?  = null
+    /** Pending coroutine that will close the embedder after an idle grace period. */
+    private var embedderCloseJob: Job? = null
 
     private fun getAvailableMemoryMB(): Long {
         val am = getApplication<Application>().getSystemService(Application.ACTIVITY_SERVICE) as ActivityManager
@@ -182,19 +189,34 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 _isLikelyScanned.value = doc.isLikelyScanned
                 _messages.value = emptyList()
 
-                // Close any embedder from a previously loaded document.
+                // Close any embedder from a previously loaded document,
+                // cancelling any pending delayed-close job first.
+                embedderCloseJob?.cancel()
+                embedderCloseJob = null
                 embedder?.close()
-                EdgeTutorPerf.snapshot(app, "embed_warmup_before", "doc_id" to doc.id)
-                val emb = EdgeTutorPerf.trace("embed_warmup", "doc_id" to doc.id) {
-                    Embedder(app).also { it.warmUp() }
-                }
-                embedder = emb
-                EdgeTutorPerf.snapshot(app, "embed_warmup_after", "doc_id" to doc.id)
+                embedder = null
 
+                EdgeTutorPerf.snapshot(app, "embed_warmup_before", "doc_id" to doc.id)
                 EdgeTutorPerf.snapshot(app, "llm_warmup_before", "doc_id" to doc.id)
-                EdgeTutorPerf.traceSuspend("llm_warmup", "doc_id" to doc.id) {
-                    llm.warmUp()
+
+                // Run embedder and LLM warmups in parallel — both are IO-bound
+                // and independent, so overlap them to cut total warmup wall time.
+                coroutineScope {
+                    val embJob = async {
+                        EdgeTutorPerf.trace("embed_warmup", "doc_id" to doc.id) {
+                            Embedder(app).also { it.warmUp() }
+                        }
+                    }
+                    val llmJob = async {
+                        EdgeTutorPerf.traceSuspend("llm_warmup", "doc_id" to doc.id) {
+                            llm.warmUp()
+                        }
+                    }
+                    embedder = embJob.await()
+                    llmJob.await()
                 }
+
+                EdgeTutorPerf.snapshot(app, "embed_warmup_after", "doc_id" to doc.id)
                 EdgeTutorPerf.snapshot(app, "llm_warmup_after", "doc_id" to doc.id)
                 _isWarmingUp.value = false
             } catch (e: Exception) {
@@ -215,6 +237,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (_isWarmingUp.value) return
 
         viewModelScope.launch(Dispatchers.IO) {
+            // Cancel any pending delayed embedder close — the embedder is
+            // needed for this query so keep it alive.
+            embedderCloseJob?.cancel()
+            embedderCloseJob = null
+
             val thinkingStartMs = SystemClock.elapsedRealtime()
             val queryStartNs = System.nanoTime()
             val docId = activeDoc?.id ?: -1L
@@ -441,9 +468,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         flushAssistantChunk(remaining, source = "final_flush")
                     }
                     if (releaseEmbedder) {
-                        // On low-memory devices, recreate lazily on the next query
-                        // instead of immediately paying the session startup cost here.
-                        embedder = null
+                        // Post-generation: eagerly recreate the embedder so a rapid
+                        // follow-up query finds it warm. Schedule a delayed close to
+                        // reclaim the ~23 MB if the user goes idle.
+                        val freshEmb = Embedder(app).also { it.warmUp(); embedder = it }
+                        embedderCloseJob = viewModelScope.launch {
+                            delay(EMBEDDER_CLOSE_DELAY_MS)
+                            freshEmb.close()
+                            if (embedder === freshEmb) embedder = null
+                            embedderCloseJob = null
+                        }
                     }
                 }
                 EdgeTutorPerf.log(
@@ -718,6 +752,8 @@ Question: $question
 
     override fun onCleared() {
         super.onCleared()
+        embedderCloseJob?.cancel()
+        embedderCloseJob = null
         llm.close()
         embedder?.close()
         embedder = null

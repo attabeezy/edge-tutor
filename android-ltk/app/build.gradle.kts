@@ -62,11 +62,13 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
 
     // Llamatik (llama.cpp wrapper for GGUF models — Gemma 3 270M)
-    // 0.18.0 includes KV-cache support and improved ARM NEON optimizations
+    // Do not call sessionReset(); generation is isolated by the app-level mutex.
     // Verify latest version at https://github.com/ferranpons/Llamatik/releases
-    implementation("com.llamatik:library-android:0.18.0")
+    implementation("com.llamatik:library-android:1.7.0")
 
     // MediaPipe LLM Inference (Google — Gemma 3 270M .task format)
     // Verify latest version at https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference/android
     implementation("com.google.mediapipe:tasks-genai:0.10.27")
+
+    testImplementation("junit:junit:4.13.2")
 }

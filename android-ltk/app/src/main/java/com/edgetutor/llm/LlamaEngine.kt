@@ -172,12 +172,18 @@ class LlamaEngine(private val context: Context) : LlmEngine {
             var stopped = false
             val startNs = System.nanoTime()
             var firstTokenLogged = false
+            val safePrompt = PromptSanitizer.sanitize(prompt)
+            logSanitizationChange("llm_prompt_sanitization", source, safePrompt)
             LlamaBridge.generateStream(
-                prompt,
+                safePrompt.value,
                 object : GenStream {
                     override fun onDelta(text: String) {
                         if (stopped) return
-                        if (logMetrics && !firstTokenLogged && text.isNotEmpty()) {
+                        val safeDelta = PromptSanitizer.sanitize(text)
+                        logSanitizationChange("llm_output_sanitization", source, safeDelta)
+                        val delta = safeDelta.value
+                        if (delta.isEmpty()) return
+                        if (logMetrics && !firstTokenLogged) {
                             firstTokenLogged = true
                             EdgeTutorPerf.log(
                                 "llm_decode_first_token",
@@ -186,11 +192,11 @@ class LlamaEngine(private val context: Context) : LlmEngine {
                             )
                         }
                         val prevLen = sb.length
-                        sb.append(text)
+                        sb.append(delta)
 
                         // Only scan the tail (window = longest stop seq) to avoid
                         // O(response_length) search cost on every token.
-                        val tailStart = maxOf(0, sb.length - MAX_STOP_SEQ_LEN - text.length)
+                        val tailStart = maxOf(0, sb.length - MAX_STOP_SEQ_LEN - delta.length)
                         val tail = sb.substring(tailStart)
                         val seqIdx = STOP_SEQUENCES
                             .mapNotNull { seq -> tail.indexOf(seq).takeIf { it >= 0 }?.let { tailStart + it } }
@@ -202,7 +208,7 @@ class LlamaEngine(private val context: Context) : LlmEngine {
                             val newPart = sb.substring(prevLen, minOf(stopIdx, sb.length))
                             if (newPart.isNotEmpty()) onToken(newPart)
                         } else {
-                            onToken(text)
+                            onToken(delta)
                         }
                     }
 
@@ -243,6 +249,21 @@ class LlamaEngine(private val context: Context) : LlmEngine {
                 }
             )
         }
+
+    private fun logSanitizationChange(
+        eventName: String,
+        source: String,
+        sanitizedText: PromptSanitizer.SanitizedText,
+    ) {
+        if (!sanitizedText.changed) return
+        EdgeTutorPerf.log(
+            eventName,
+            "source" to source,
+            "sanitized_chars" to sanitizedText.value.length,
+            "replacement_count" to sanitizedText.replacementCount,
+            "dropped_count" to sanitizedText.droppedCount,
+        )
+    }
 
     private suspend fun <T> withGenerateLock(caller: String, block: suspend () -> T): T {
         val waitStartNs = System.nanoTime()
