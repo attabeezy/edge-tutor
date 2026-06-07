@@ -23,7 +23,7 @@ import kotlin.coroutines.resumeWithException
  *   Download: hf download LiquidAI/LFM2.5-350M-GGUF LFM2.5-350M-Q4_K_M.gguf
  *   Do NOT commit to git — copy manually before build.
  *
- * Switch to [MediaPipeEngine] if Llamatik is unavailable.
+ * Llamatik is the only packaged LLM runtime in the Android app.
  */
 class LlamaEngine(private val context: Context) : LlmEngine {
 

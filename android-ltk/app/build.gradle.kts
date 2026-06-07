@@ -14,6 +14,10 @@ android {
         targetSdk     = 35
         versionCode   = 1
         versionName   = "0.1.0-mvp"
+
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildFeatures { compose = true }
@@ -65,10 +69,6 @@ dependencies {
     // Do not call sessionReset(); generation is isolated by the app-level mutex.
     // Verify latest version at https://github.com/ferranpons/Llamatik/releases
     implementation("com.llamatik:library-android:1.7.0")
-
-    // MediaPipe LLM Inference (Google — Gemma 3 270M .task format)
-    // Verify latest version at https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference/android
-    implementation("com.google.mediapipe:tasks-genai:0.10.27")
 
     testImplementation("junit:junit:4.13.2")
 }
