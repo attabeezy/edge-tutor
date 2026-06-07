@@ -13,15 +13,27 @@ An offline RAG (Retrieval-Augmented Generation) tutoring assistant for Android. 
 
 ```
 edge-tutor/
-|-- src/                    # Python MVP prototype
-|   |-- ingestion/          # PDF parsing + chunking + embedding
-|   `-- rag/                # Query pipeline + REPL
-|-- scripts/                # Utility scripts (ONNX export)
-|-- tests/                  # Python unit tests + retrieval eval
-|-- models/                 # Shared model files (git-ignored - copy manually)
-|-- data/                   # Python runtime: raw PDFs and FAISS indices
-|-- android-ltk/            # Android app - Llamatik/llama.cpp backend
-`-- PROJECT.md              # Specification, status, and roadmap
+├── android-ltk/              # Android app using Llamatik/llama.cpp
+│   ├── app/src/main/java/com/edgetutor/
+│   │   ├── data/db/          # Room database entities, DAO, converters
+│   │   ├── ingestion/        # PDF extraction, chunking, tokenization, embedding
+│   │   ├── llm/              # LLM engine abstractions and prompt sanitizer
+│   │   ├── perf/             # Android performance helpers
+│   │   ├── store/            # On-device vector/index storage
+│   │   └── viewmodel/        # Chat and ingestion state
+│   ├── app/src/main/res/     # Android resources and launcher assets
+│   └── app/src/test/         # Android unit tests
+├── src/                      # Python MVP prototype
+│   ├── ingestion/            # PDF parsing, chunking, and embedding pipeline
+│   └── rag/                  # Query pipeline and REPL
+├── tests/                    # Python unit tests and RAG/model eval scripts
+├── scripts/                  # Setup, export, download, and repo hygiene scripts
+├── notebooks/                # Analysis notebooks and experiments
+├── data/                     # Runtime data: raw PDFs, processed text, indices
+├── models/                   # Local model files (git-ignored; copy/download manually)
+├── requirements.txt          # Python dependencies
+├── android-ltk/README.md     # Android build and run instructions
+└── PROJECT.md                # Specification, status, and roadmap
 ```
 
 ## Quick Start
