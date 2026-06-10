@@ -109,18 +109,23 @@ fun EdgeTutorApp(
     val thinking by chatVm.isThinking.collectAsState()
     val thinkingUiState by chatVm.thinkingUiState.collectAsState()
     val warmingUp by chatVm.isWarmingUp.collectAsState()
+    val modelProvisioningStatus by chatVm.modelProvisioningStatus.collectAsState()
     val errorMsg by chatVm.errorMessage.collectAsState()
     val activeDocId by chatVm.activeDocumentId.collectAsState()
     var question by remember { mutableStateOf("") }
 
     val currentDoc = documents.firstOrNull()
     val readyDoc = currentDoc?.takeIf { it.status == IngestionStatus.DONE }
-    val chatLocked = currentDoc == null || currentDoc.status != IngestionStatus.DONE || warmingUp
+    val chatLocked = currentDoc == null ||
+        currentDoc.status != IngestionStatus.DONE ||
+        warmingUp ||
+        modelProvisioningStatus != null
     val canSend = question.isNotBlank() && !chatLocked && !thinking
     val canAdd = question.isBlank() && !thinking
 
     val statusText = currentDoc?.let { doc ->
         when {
+            modelProvisioningStatus != null -> modelProvisioningStatus
             doc.status == IngestionStatus.RUNNING -> progress[doc.id]?.let { p ->
                 if (p.total > 0) "${p.phase.lowercase()} ${p.current}/${p.total}"
                 else "${p.phase.lowercase()} ${p.current}"
@@ -182,6 +187,7 @@ fun EdgeTutorApp(
             messages = messages,
             thinkingUiState = thinkingUiState,
             warmingUp = warmingUp,
+            modelProvisioningStatus = modelProvisioningStatus,
         )
 
         Spacer(Modifier.height(12.dp))
@@ -302,9 +308,13 @@ private fun ChatFeed(
     messages: List<ChatMessage>,
     thinkingUiState: ThinkingUiState,
     warmingUp: Boolean,
+    modelProvisioningStatus: String?,
 ) {
     if (currentDoc == null) {
-        EmptyState(modifier = modifier.fillMaxWidth())
+        EmptyState(
+            modifier = modifier.fillMaxWidth(),
+            statusText = modelProvisioningStatus,
+        )
         return
     }
 
@@ -323,14 +333,17 @@ private fun ChatFeed(
         }
         if (warmingUp) {
             item {
-                StatusNote("warming up...")
+                StatusNote(modelProvisioningStatus ?: "warming up...")
             }
         }
     }
 }
 
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier) {
+private fun EmptyState(
+    modifier: Modifier = Modifier,
+    statusText: String?,
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -350,6 +363,10 @@ private fun EmptyState(modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
+        if (statusText != null) {
+            Spacer(Modifier.height(14.dp))
+            StatusNote(statusText)
+        }
     }
 }
 

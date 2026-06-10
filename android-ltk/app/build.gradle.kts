@@ -1,7 +1,17 @@
+import org.gradle.api.tasks.Copy
+
 plugins {
     id("com.android.application")
     id("com.google.devtools.ksp")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+val qwenModelFileName = "Qwen_Qwen3-0.6B-Q4_K_M.gguf"
+val bundledModelAssetDir = layout.buildDirectory.dir("generated/assets/bundledModel")
+val bundledModelAssetDirFile = layout.buildDirectory.dir("generated/assets/bundledModel").get().asFile
+val copyBundledModelAsset = tasks.register<Copy>("copyBundledModelAsset") {
+    from(rootProject.layout.projectDirectory.file("../models/$qwenModelFileName"))
+    into(bundledModelAssetDir)
 }
 
 android {
@@ -14,13 +24,27 @@ android {
         targetSdk     = 35
         versionCode   = 1
         versionName   = "0.1.0-mvp"
+    }
 
-        ndk {
-            abiFilters += "arm64-v8a"
+    flavorDimensions += "model"
+    productFlavors {
+        create("bundledModel") {
+            dimension = "model"
+        }
+        create("downloadModel") {
+            dimension = "model"
         }
     }
 
-    buildFeatures { compose = true }
+    sourceSets {
+        getByName("bundledModel") {
+            assets.srcDir(bundledModelAssetDirFile)
+        }
+    }
+
+    buildFeatures {
+        compose = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -32,6 +56,11 @@ android {
         checkReleaseBuilds = false
     }
 }
+
+tasks.matching { it.name.startsWith("mergeBundledModel") && it.name.endsWith("Assets") }
+    .configureEach {
+        dependsOn(copyBundledModelAsset)
+    }
 
 dependencies {
     // Jetpack Compose BOM

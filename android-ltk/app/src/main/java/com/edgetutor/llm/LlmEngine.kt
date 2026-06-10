@@ -18,7 +18,7 @@ interface LlmEngine : AutoCloseable {
      * background at app startup, well before the user selects a document.
      * Default implementation is a no-op.
      */
-    suspend fun copyModelIfNeeded() {}
+    suspend fun copyModelIfNeeded(onProgress: (String?) -> Unit = {}) {}
 
     /**
      * Load the native model weights into memory without running a dummy decode.

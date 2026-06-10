@@ -48,19 +48,30 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val llm: LlmEngine by lazy { LlamaEngine(app) }
 
+    private val _modelProvisioningStatus = MutableStateFlow<String?>(null)
+    val modelProvisioningStatus: StateFlow<String?> = _modelProvisioningStatus
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage
+
     init {
         // Start copying the model asset to internal storage immediately so the file
         // is ready on disk by the time the user selects a document and warmUp() fires.
         // On subsequent launches the file already exists and this completes instantly.
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                llm.copyModelIfNeeded()
+                llm.copyModelIfNeeded { status -> _modelProvisioningStatus.value = status }
                 // Load native weights immediately after copy so the expensive
                 // LlamaBridge.initGenerateModel() is hidden behind the document-picker
                 // screen rather than paid at document selection time.
+                _modelProvisioningStatus.value = "Loading model"
                 llm.initNativeModel()
+                _modelProvisioningStatus.value = null
             }
-            catch (e: Exception) { _errorMessage.value = "Model unavailable: ${e.message}" }
+            catch (e: Exception) {
+                _modelProvisioningStatus.value = null
+                _errorMessage.value = "Model unavailable: ${e.message}"
+            }
         }
     }
 
@@ -76,9 +87,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _isWarmingUp = MutableStateFlow(false)
     val isWarmingUp: StateFlow<Boolean> = _isWarmingUp
-
-    private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage: StateFlow<String?> = _errorMessage
 
     /** Emits true when the active document was flagged as a likely scanned PDF. */
     private val _isLikelyScanned = MutableStateFlow(false)
@@ -209,7 +217,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     val llmJob = async {
                         EdgeTutorPerf.traceSuspend("llm_warmup", "doc_id" to doc.id) {
+                            llm.copyModelIfNeeded { status -> _modelProvisioningStatus.value = status }
+                            _modelProvisioningStatus.value = "Loading model"
                             llm.warmUp()
+                            _modelProvisioningStatus.value = null
                         }
                     }
                     embedder = embJob.await()
@@ -221,6 +232,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 _isWarmingUp.value = false
             } catch (e: Exception) {
                 _isWarmingUp.value = false
+                _modelProvisioningStatus.value = null
                 _errorMessage.value = "Failed to load model: ${e.message}"
             }
         }
