@@ -438,7 +438,24 @@ private fun ThinkingNote() {
         }
     }
 
-    StatusNote("thinking${".".repeat(dotCount)} (${elapsedSecs}s)")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "thinking",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = ".".repeat(dotCount),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(12.dp),
+        )
+        Text(
+            text = "(${elapsedSecs}s)",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 private fun formatElapsedDuration(durationMs: Long): String {

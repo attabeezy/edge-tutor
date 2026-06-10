@@ -89,6 +89,18 @@ android-ltk/build/
 android-ltk/app/build/
 android-ltk/local.properties
 android-ltk/.idea/
+android-mlc/.gradle/
+android-mlc/build/
+android-mlc/app/build/
+android-mlc/local.properties
+android-mlc/.idea/
+android-mlc/dist/
+android-mlc/**/dist/
+android-mlc/**/build/
+android-mlc/app/src/main/assets/*.bin
+android-mlc/app/src/main/assets/*.json
+android-mlc/app/src/main/assets/*.model
+tools/mlc-llm/
 notebooks/
 
 # Python/Linting
