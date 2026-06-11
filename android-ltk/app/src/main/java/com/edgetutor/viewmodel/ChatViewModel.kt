@@ -604,10 +604,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         lexicalOverlap: Int,
         requiredOverlap: Int,
     ): RouteDecision {
-        val academicFallback = isAcademicQuestion(question)
         return RouteDecision(
-            route = if (academicFallback) QueryRoute.GENERAL_REASONING else QueryRoute.UNRELATED,
-            reason = if (academicFallback) "academic_fallback_after_$reason" else "unrelated_refusal_after_$reason",
+            route = QueryRoute.GENERAL_REASONING,
+            reason = "general_reasoning_after_$reason",
             lexicalOverlap = lexicalOverlap,
             requiredOverlap = requiredOverlap,
         )
