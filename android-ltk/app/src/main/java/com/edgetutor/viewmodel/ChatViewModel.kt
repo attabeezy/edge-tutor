@@ -673,7 +673,7 @@ $passages
 
 $conversationContext
 
-${answerInstruction(wantsWorkedExample)}
+${answerInstruction(wantsWorkedExample, hasPassages = true)}
 Question: $question
 """.trimIndent()
 
@@ -684,15 +684,17 @@ Question: $question
     ): String = """
 The loaded document did not provide strong support. Answer as a concise tutor.
 $conversationContext
-${answerInstruction(wantsWorkedExample)}
+${answerInstruction(wantsWorkedExample, hasPassages = false)}
 Question: $question
 """.trimIndent()
 
-    private fun answerInstruction(wantsWorkedExample: Boolean): String =
+    private fun answerInstruction(wantsWorkedExample: Boolean, hasPassages: Boolean): String =
         if (wantsWorkedExample) {
             "Give a small worked example. Show the derivative, integrate it back, and check the result. Do not reply with only a constant or equation."
-        } else {
+        } else if (hasPassages) {
             "Answer using these passages. Be direct and explain the relationship, not a loose scenario."
+        } else {
+            "Answer directly and concisely. Explain the relationship, not a loose scenario."
         }
 
     // ---------------------------------------------------------------------------
