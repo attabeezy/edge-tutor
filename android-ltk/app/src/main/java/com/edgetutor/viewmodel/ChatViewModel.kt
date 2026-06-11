@@ -502,13 +502,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------------------------------------------------------------------
 
     /**
-     * Returns true if the question appears to be covered by the retrieved chunks.
-     *
-     * Two conditions must both pass:
-     *  1. At least one chunk has cosine similarity >= [MIN_COSINE_SIM] (equivalent
-     *     to L2 distance <= 1.4 on normalized vectors: cos = 1 - dist²/2).
-     *  2. The question shares >= [MIN_LEXICAL_OVERLAP] content words with at least
-     *     one chunk (stopwords excluded).
+     * Keeps a compact set of retrieved chunks for prompt context when similarity is useful.
      */
     private fun selectContext(results: List<Pair<FlatIndex.Entry, Float>>): ContextSelection {
         val sortedResults = results.sortedByDescending { (_, sim) -> sim }
