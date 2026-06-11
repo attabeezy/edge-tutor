@@ -316,7 +316,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         question = sanitizedQuestion.value,
                         wantsWorkedExample = wantsWorkedExample(question),
                     )
-                    QueryRoute.UNRELATED -> ""
                 }
                 val sanitizedPrompt = PromptSanitizer.sanitize(prompt)
                 val promptBuildMs = EdgeTutorPerf.elapsedMs(promptBuildStartNs)
@@ -369,19 +368,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     "estimated_prompt_tokens" to estimatePromptTokens(sanitizedPrompt.value),
                     "query_route" to routeDecision.route.name,
                 )
-                if (routeDecision.route == QueryRoute.UNRELATED) {
-                    _messages.value += ChatMessage(
-                        role = Role.ASSISTANT,
-                        text = "This doesn't appear to be covered in the loaded document.",
-                    )
-                    shouldPersistThinkingDuration = true
-                    EdgeTutorPerf.log(
-                        "query_stage_timing",
-                        "doc_id" to docId,
-                        "total_answer_ms" to EdgeTutorPerf.elapsedMs(queryStartNs),
-                    )
-                    return@launch
-                }
 
                 // 4. Add a placeholder ASSISTANT message; stream tokens into it.
                 //    The first visible token is flushed immediately for perceived TTFT;
@@ -717,7 +703,7 @@ Question: $question
     private fun formatScores(scores: List<Float>): String =
         scores.joinToString(",") { "%.4f".format(it) }
 
-    private enum class QueryRoute { GROUNDED, GENERAL_REASONING, UNRELATED }
+    private enum class QueryRoute { GROUNDED, GENERAL_REASONING }
 
     private data class ContextSelection(
         val retrievedCount: Int,
