@@ -126,17 +126,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             "and", "but", "if", "not", "no", "so",
         )
 
-        private val ACADEMIC_TERMS = setOf(
-            "academic", "algebra", "analyze", "answer", "biology", "calculate",
-            "calculus", "chemistry", "compare", "concept", "define", "derivative",
-            "differentiate", "differential", "equation", "example", "explain",
-            "factor", "formula", "function", "geometry", "graph", "history",
-            "homework", "integral", "interpret", "lesson", "limit", "math",
-            "physics", "practice", "problem", "proof", "reading", "science",
-            "slope", "solve", "study", "summarize", "teach", "theorem", "tutor",
-            "understand", "word",
-        )
-
         private val FOLLOWUP_TERMS = setOf(
             "again", "also", "another", "back", "example", "it", "more", "that",
             "this", "those", "time",
@@ -566,7 +555,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun routeQuery(question: String, contextSelection: ContextSelection): RouteDecision {
         if (contextSelection.maxSimilarity < MIN_COSINE_SIM) {
             return weakDocumentRoute(
-                question = question,
                 reason = "similarity_failure",
                 lexicalOverlap = 0,
                 requiredOverlap = MIN_LEXICAL_OVERLAP,
@@ -591,7 +579,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         return weakDocumentRoute(
-            question = question,
             reason = "lexical_overlap_failure",
             lexicalOverlap = overlap.bestOverlap,
             requiredOverlap = overlap.requiredOverlap,
@@ -599,7 +586,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun weakDocumentRoute(
-        question: String,
         reason: String,
         lexicalOverlap: Int,
         requiredOverlap: Int,
@@ -626,12 +612,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             bestOverlap = bestOverlap,
             requiredOverlap = required,
         )
-    }
-
-    private fun isAcademicQuestion(question: String): Boolean {
-        val tokens = normalizedTokens(question)
-        if (tokens.any { it in ACADEMIC_TERMS }) return true
-        return question.contains("?") && tokens.any { it.length >= 5 && it in ACADEMIC_TERMS }
     }
 
     private fun buildRetrievalQuestion(question: String, priorMessages: List<ChatMessage>): String {
