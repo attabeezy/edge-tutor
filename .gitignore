@@ -51,7 +51,7 @@ $RECYCLE.BIN/
 
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 .claude/
-MNN/
+/MNN/
 CLAUDE.md
 PROJECT.md
 .pytest_cache/
@@ -78,14 +78,22 @@ android/app/src/main/assets/*.txt
 android-ltk/app/src/main/assets/*.gguf
 android-ltk/app/src/main/assets/*.onnx
 android-ltk/app/src/main/assets/*.txt
-android-mnn/
-
-# Android build artifacts & local config
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
-android/.idea/
+# android-mnn — ignore build artefacts and large binaries, track source code
+android-mnn/.gradle/
+android-mnn/build/
+android-mnn/app/build/
+android-mnn/app/.cxx/
+android-mnn/local.properties
+android-mnn/.idea/
+android-mnn/.kotlin/
+# MNN native library (~7 MB) — built from MNN/ source tree
+android-mnn/app/src/main/jniLibs/**/*.so
+# MNN model weight files (~516 MB) — pushed to device via adb
+android-mnn/app/src/main/assets/*.mnn
+android-mnn/app/src/main/assets/*.weight
+android-mnn/app/src/main/assets/*.json
+android-mnn/app/src/main/assets/*.onnx
+android-mnn/app/src/main/assets/tokenizer.txt
 android-ltk/.gradle/
 android-ltk/build/
 android-ltk/app/build/

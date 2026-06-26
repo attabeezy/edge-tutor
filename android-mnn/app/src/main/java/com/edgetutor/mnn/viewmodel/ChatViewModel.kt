@@ -1,0 +1,545 @@
+package com.edgetutor.mnn.viewmodel
+
+import android.app.ActivityManager
+import android.app.Application
+import android.os.SystemClock
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.edgetutor.mnn.data.db.DocumentEntity
+import com.edgetutor.mnn.ingestion.Embedder
+import com.edgetutor.mnn.llm.LlmEngine
+import com.edgetutor.mnn.llm.MnnEngine
+import com.edgetutor.mnn.llm.PromptSanitizer
+import com.edgetutor.mnn.perf.EdgeTutorPerf
+import com.edgetutor.mnn.store.FlatIndex
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.io.File
+import kotlin.math.ceil
+
+data class ChatMessage(
+    val role: Role,
+    val text: String,
+    /** Short excerpts of the retrieved chunks — shown as source attribution. */
+    val sources: List<String> = emptyList(),
+)
+
+enum class Role { USER, ASSISTANT }
+
+sealed class ThinkingUiState {
+    object Idle   : ThinkingUiState()
+    object Active : ThinkingUiState()
+    data class Done(val durationMs: Long) : ThinkingUiState()
+}
+
+/**
+ * Chat ViewModel for the MNN-LLM variant.
+ *
+ * The only difference from android-ltk's ChatViewModel is the [llm] binding:
+ *   - android-ltk  → LlamaEngine  (Llamatik / llama.cpp / GGUF)
+ *   - android-mnn  → MnnEngine    (MNN-LLM / .mnn weights)
+ *
+ * All retrieval, prompt-budgeting, perf logging, and streaming logic is
+ * identical so device measurements are directly comparable.
+ */
+class ChatViewModel(app: Application) : AndroidViewModel(app) {
+
+    // ► Swap MnnEngine for any other LlmEngine implementation here.
+    private val llm: LlmEngine by lazy { MnnEngine(app) }
+
+    init {
+        // Start native init immediately so it is hidden behind the document-picker.
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                llm.copyModelIfNeeded()
+                llm.initNativeModel()
+            } catch (e: Exception) {
+                _errorMessage.value = "Model unavailable: ${e.message}"
+            }
+        }
+    }
+
+    private val _messages    = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val messages: StateFlow<List<ChatMessage>> = _messages
+
+    private val _thinkingUiState = MutableStateFlow<ThinkingUiState>(ThinkingUiState.Idle)
+    val thinkingUiState: StateFlow<ThinkingUiState> = _thinkingUiState.asStateFlow()
+    val isThinking: StateFlow<Boolean> = _thinkingUiState
+        .map { it is ThinkingUiState.Active }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private val _isWarmingUp = MutableStateFlow(false)
+    val isWarmingUp: StateFlow<Boolean> = _isWarmingUp
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage
+
+    private val _isLikelyScanned = MutableStateFlow(false)
+    val isLikelyScanned: StateFlow<Boolean> = _isLikelyScanned
+
+    private val _activeDocumentId = MutableStateFlow<Long?>(null)
+    val activeDocumentId: StateFlow<Long?> = _activeDocumentId.asStateFlow()
+
+    companion object {
+        private const val LOW_MEM_THRESHOLD_MB        = 200L
+        private const val EMBEDDER_CLOSE_DELAY_MS     = 30_000L
+        private const val RETRIEVAL_CANDIDATE_K       = 5
+        private const val MAX_KEPT_CONTEXT_CHUNKS     = 2
+        private const val MAX_CONTEXT_CHARS_PER_CHUNK = 800
+        private const val MAX_FOLLOWUP_CONTEXT_CHARS  = 180
+        private const val MAX_ANSWER_CONTEXT_CHARS    = 250
+
+        private val STOPWORDS = setOf(
+            "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+            "have", "has", "had", "do", "does", "did", "will", "would", "could",
+            "should", "may", "might", "shall", "can", "i", "you", "he", "she",
+            "it", "we", "they", "what", "how", "why", "when", "where", "who",
+            "which", "this", "that", "these", "those", "of", "in", "on", "at",
+            "to", "for", "with", "by", "from", "about", "into", "than", "or",
+            "and", "but", "if", "not", "no", "so",
+        )
+
+        private val FOLLOWUP_TERMS = setOf(
+            "again", "also", "another", "back", "example", "it", "more", "that",
+            "this", "those", "time",
+        )
+
+        private val WORKED_EXAMPLE_TERMS = setOf(
+            "calculate", "differentiate", "example", "integrate", "problem", "show",
+            "solve", "step", "steps", "work",
+        )
+    }
+
+    private var index: FlatIndex?   = null
+    var activeDoc: DocumentEntity?  = null
+        private set
+    private var embedder: Embedder? = null
+    private var embedderCloseJob: Job? = null
+
+    private fun getAvailableMemoryMB(): Long {
+        val am = getApplication<Application>().getSystemService(Application.ACTIVITY_SERVICE) as ActivityManager
+        val info = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        return info.availMem / (1024 * 1024)
+    }
+
+    private fun shouldReleaseEmbedderForGeneration(): Boolean =
+        getAvailableMemoryMB() < LOW_MEM_THRESHOLD_MB
+
+    // -------------------------------------------------------------------------
+    // Document loading
+    // -------------------------------------------------------------------------
+
+    fun loadDocument(doc: DocumentEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isWarmingUp.value = true
+            _thinkingUiState.value = ThinkingUiState.Idle
+            try {
+                val file = File(getApplication<Application>().filesDir, "${doc.id}.idx")
+                if (!file.exists()) { _isWarmingUp.value = false; return@launch }
+                val app = getApplication<Application>()
+                val idx = EdgeTutorPerf.trace("index_load", "doc_id" to doc.id) {
+                    FlatIndex().also { it.load(file) }
+                }
+                index = idx
+                activeDoc = doc
+                _activeDocumentId.value = doc.id
+                _isLikelyScanned.value = doc.isLikelyScanned
+                _messages.value = emptyList()
+
+                embedderCloseJob?.cancel()
+                embedderCloseJob = null
+                embedder?.close()
+                embedder = null
+
+                EdgeTutorPerf.snapshot(app, "embed_warmup_before", "doc_id" to doc.id)
+                EdgeTutorPerf.snapshot(app, "llm_warmup_before",   "doc_id" to doc.id)
+
+                coroutineScope {
+                    val embJob = async {
+                        EdgeTutorPerf.trace("embed_warmup", "doc_id" to doc.id) {
+                            Embedder(app).also { it.warmUp() }
+                        }
+                    }
+                    val llmJob = async {
+                        EdgeTutorPerf.traceSuspend("llm_warmup", "doc_id" to doc.id) {
+                            llm.warmUp()
+                        }
+                    }
+                    embedder = embJob.await()
+                    llmJob.await()
+                }
+
+                EdgeTutorPerf.snapshot(app, "embed_warmup_after", "doc_id" to doc.id)
+                EdgeTutorPerf.snapshot(app, "llm_warmup_after",   "doc_id" to doc.id)
+                _isWarmingUp.value = false
+            } catch (e: Exception) {
+                _isWarmingUp.value = false
+                _errorMessage.value = "Failed to load model: ${e.message}"
+            }
+        }
+    }
+
+    fun clearError() { _errorMessage.value = null }
+
+    // -------------------------------------------------------------------------
+    // Querying
+    // -------------------------------------------------------------------------
+
+    fun ask(question: String) {
+        val idx = index ?: return
+        if (_isWarmingUp.value) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            embedderCloseJob?.cancel()
+            embedderCloseJob = null
+
+            val thinkingStartMs = SystemClock.elapsedRealtime()
+            val queryStartNs    = System.nanoTime()
+            val docId           = activeDoc?.id ?: -1L
+            var shouldPersistThinkingDuration = false
+            _thinkingUiState.value = ThinkingUiState.Active
+            val priorMessages = _messages.value
+            _messages.value  += ChatMessage(Role.USER, question)
+            try {
+                val app = getApplication<Application>()
+                val retrievalQuestion = buildRetrievalQuestion(question, priorMessages)
+                val conversationContext = if (isFollowUpQuestion(question)) {
+                    buildConversationContext(priorMessages)
+                } else {
+                    ""
+                }
+
+                // 1. Embed the query.
+                val emb = embedder ?: Embedder(app).also { it.warmUp(); embedder = it }
+                val releaseEmbedder = shouldReleaseEmbedderForGeneration()
+                EdgeTutorPerf.log(
+                    "query_memory_policy",
+                    "doc_id"              to docId,
+                    "avail_mem_mb"        to getAvailableMemoryMB(),
+                    "low_mem_threshold_mb" to LOW_MEM_THRESHOLD_MB,
+                    "release_embedder"    to releaseEmbedder,
+                )
+                EdgeTutorPerf.snapshot(app, "query_embed_before", "doc_id" to docId)
+                val queryEmbedStartNs = System.nanoTime()
+                val qVec = EdgeTutorPerf.trace("query_embed", "doc_id" to docId) {
+                    emb.embed(retrievalQuestion, isQuery = true)
+                }
+                val queryEmbedMs = EdgeTutorPerf.elapsedMs(queryEmbedStartNs)
+                EdgeTutorPerf.snapshot(app, "query_embed_after", "doc_id" to docId)
+                EdgeTutorPerf.log("query_stage_timing", "doc_id" to docId, "query_embed_ms" to queryEmbedMs)
+                EdgeTutorPerf.log(
+                    "query_rewrite",
+                    "doc_id"                   to docId,
+                    "used_followup_context"    to (retrievalQuestion != question),
+                    "retrieval_query_chars"    to retrievalQuestion.length,
+                    "conversation_context_chars" to conversationContext.length,
+                )
+
+                // 2. Retrieve candidate chunks.
+                val retrievalStartNs = System.nanoTime()
+                val searchResults = EdgeTutorPerf.trace("retrieval_search", "doc_id" to docId, "k" to RETRIEVAL_CANDIDATE_K) {
+                    idx.searchWithScores(qVec, k = RETRIEVAL_CANDIDATE_K)
+                }
+                val retrievalSearchMs = EdgeTutorPerf.elapsedMs(retrievalStartNs)
+                EdgeTutorPerf.log("query_stage_timing", "doc_id" to docId, "retrieval_search_ms" to retrievalSearchMs)
+
+                // 3. Select context and build prompt.
+                val promptBuildStartNs = System.nanoTime()
+                val contextSelection = selectContext(searchResults)
+                val sanitizedQuestion = PromptSanitizer.sanitize(question)
+                val rawContextText    = contextSelection.keptChunks.joinToString("\n\n") { (_, chunk) -> chunk }
+                val sanitizedContext  = PromptSanitizer.sanitize(rawContextText)
+                val prompt = buildGroundedPrompt(
+                    passages             = sanitizedContext.value,
+                    conversationContext  = PromptSanitizer.sanitize(conversationContext).value,
+                    question             = sanitizedQuestion.value,
+                    wantsWorkedExample   = wantsWorkedExample(question),
+                )
+                val sanitizedPrompt = PromptSanitizer.sanitize(prompt)
+                val promptBuildMs   = EdgeTutorPerf.elapsedMs(promptBuildStartNs)
+                EdgeTutorPerf.log("query_stage_timing", "doc_id" to docId, "prompt_build_ms" to promptBuildMs)
+                EdgeTutorPerf.log(
+                    "query_route",
+                    "doc_id"       to docId,
+                    "query_route"  to "GROUNDED",
+                    "route_reason" to "retrieved_context",
+                    "max_sim"      to contextSelection.maxSimilarity,
+                )
+                EdgeTutorPerf.log(
+                    "prompt_metrics",
+                    "doc_id"                    to docId,
+                    "retrieved_k"               to contextSelection.retrievedCount,
+                    "kept_k"                    to contextSelection.keptChunks.size,
+                    "max_sim"                   to contextSelection.maxSimilarity,
+                    "kept_sim_scores"           to formatScores(contextSelection.keptScores),
+                    "dropped_sim_scores"        to formatScores(contextSelection.droppedScores),
+                    "context_char_cap"          to contextSelection.contextCharCap,
+                    "final_context_chars"       to contextSelection.finalContextChars,
+                    "prompt_chars"              to sanitizedPrompt.value.length,
+                    "estimated_prompt_tokens"   to estimatePromptTokens(sanitizedPrompt.value),
+                    "query_route"               to "GROUNDED",
+                )
+
+                // 4. Add placeholder ASSISTANT message; stream tokens into it.
+                _messages.value += ChatMessage(
+                    role    = Role.ASSISTANT,
+                    text    = "",
+                    sources = contextSelection.keptChunks.map { (_, chunk) -> chunk.take(120) + "." },
+                )
+
+                val tokenBuf = StringBuilder()
+                var firstTokenFlushed = false
+                var uiVisibleTtftLogged = false
+                fun flushAssistantChunk(chunk: String, source: String) {
+                    if (chunk.isEmpty()) return
+                    val list = _messages.value.toMutableList()
+                    val last = list.last()
+                    val updatedText = last.text + chunk
+                    list[list.lastIndex] = last.copy(text = updatedText)
+                    _messages.value = list
+                    if (!uiVisibleTtftLogged && updatedText.isNotBlank()) {
+                        uiVisibleTtftLogged = true
+                        EdgeTutorPerf.log(
+                            "query_stage_timing",
+                            "doc_id"             to docId,
+                            "ui_visible_ttft_ms" to EdgeTutorPerf.elapsedMs(queryStartNs),
+                            "source"             to source,
+                        )
+                    }
+                }
+                var flushJob: Job? = viewModelScope.launch(Dispatchers.Main) {
+                    while (isActive) {
+                        delay(50)
+                        val chunk = synchronized(tokenBuf) {
+                            if (tokenBuf.isEmpty()) null
+                            else { val s = tokenBuf.toString(); tokenBuf.clear(); s }
+                        }
+                        if (chunk != null) flushAssistantChunk(chunk, "buffered_flush")
+                    }
+                }
+
+                if (releaseEmbedder) {
+                    EdgeTutorPerf.log("embedder_release_before_generation", "doc_id" to docId)
+                    emb.close()
+                    embedder = null
+                    System.gc()
+                    delay(200)
+                }
+
+                try {
+                    llm.generate(sanitizedPrompt.value) { token ->
+                        val immediateChunk = synchronized(tokenBuf) {
+                            if (!firstTokenFlushed && token.isNotBlank()) {
+                                firstTokenFlushed = true
+                                val chunk = tokenBuf.toString() + token
+                                tokenBuf.clear()
+                                chunk
+                            } else {
+                                tokenBuf.append(token)
+                                null
+                            }
+                        }
+                        if (immediateChunk != null) {
+                            flushAssistantChunk(immediateChunk, "first_token_flush")
+                        }
+                    }
+                } finally {
+                    flushJob?.cancel()
+                    flushJob = null
+                    val remaining = synchronized(tokenBuf) {
+                        val chunk = tokenBuf.toString(); tokenBuf.clear(); chunk
+                    }
+                    if (remaining.isNotEmpty()) flushAssistantChunk(remaining, "final_flush")
+                    if (releaseEmbedder) {
+                        val freshEmb = Embedder(app).also { it.warmUp(); embedder = it }
+                        embedderCloseJob = viewModelScope.launch {
+                            delay(EMBEDDER_CLOSE_DELAY_MS)
+                            freshEmb.close()
+                            if (embedder === freshEmb) embedder = null
+                            embedderCloseJob = null
+                        }
+                    }
+                }
+                EdgeTutorPerf.log(
+                    "query_stage_timing",
+                    "doc_id"          to docId,
+                    "total_answer_ms" to EdgeTutorPerf.elapsedMs(queryStartNs),
+                )
+
+                val lastAssistantMessage = _messages.value.lastOrNull()
+                shouldPersistThinkingDuration =
+                    lastAssistantMessage != null &&
+                    lastAssistantMessage.role == Role.ASSISTANT &&
+                    lastAssistantMessage.text.isNotBlank()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _errorMessage.value = "Query failed: ${e.message}"
+            } finally {
+                _thinkingUiState.value =
+                    if (shouldPersistThinkingDuration)
+                        ThinkingUiState.Done(SystemClock.elapsedRealtime() - thinkingStartMs)
+                    else
+                        ThinkingUiState.Idle
+            }
+        }
+    }
+
+    fun resetHistory() {
+        _messages.value = emptyList()
+        _thinkingUiState.value = ThinkingUiState.Idle
+    }
+
+    // -------------------------------------------------------------------------
+    // Query routing and context budgeting
+    // -------------------------------------------------------------------------
+
+    private fun selectContext(results: List<Pair<FlatIndex.Entry, Float>>): ContextSelection {
+        val sortedResults = results.sortedByDescending { (_, sim) -> sim }
+        val keptCandidates = sortedResults.take(MAX_KEPT_CONTEXT_CHUNKS)
+
+        val keptEntries = keptCandidates.mapIndexed { index, (entry, _) ->
+            entry to "${index + 1}. ${entry.text.take(MAX_CONTEXT_CHARS_PER_CHUNK)}"
+        }
+        val keptIds     = keptCandidates.map { (entry, _) -> entry.id }.toSet()
+        val keptScores  = keptCandidates.map { (_, sim) -> sim }
+        val droppedScores = sortedResults
+            .filterIndexed { index, (entry, _) ->
+                index >= MAX_KEPT_CONTEXT_CHUNKS || entry.id !in keptIds
+            }
+            .map { (_, sim) -> sim }
+
+        return ContextSelection(
+            retrievedCount    = results.size,
+            keptChunks        = keptEntries,
+            keptScores        = keptScores,
+            droppedScores     = droppedScores,
+            maxSimilarity     = sortedResults.firstOrNull()?.second ?: 0f,
+            contextCharCap    = MAX_CONTEXT_CHARS_PER_CHUNK,
+            finalContextChars = keptEntries.sumOf { (_, chunk) -> chunk.length },
+        )
+    }
+
+    private fun buildRetrievalQuestion(question: String, priorMessages: List<ChatMessage>): String {
+        if (!isFollowUpQuestion(question)) return question
+        val previousUserQuestion = priorMessages
+            .lastOrNull { it.role == Role.USER }
+            ?.text
+            ?.take(MAX_FOLLOWUP_CONTEXT_CHARS)
+            ?: return question
+        return "$previousUserQuestion $question"
+    }
+
+    private fun buildConversationContext(priorMessages: List<ChatMessage>): String {
+        val lastUser      = priorMessages.lastOrNull { it.role == Role.USER } ?: return ""
+        val lastAssistant = priorMessages.lastOrNull { it.role == Role.ASSISTANT }
+        val sb = StringBuilder("Previous question: ${lastUser.text.take(MAX_FOLLOWUP_CONTEXT_CHARS)}")
+        if (lastAssistant != null && lastAssistant.text.isNotBlank()) {
+            sb.append("\nPrevious answer: ${lastAssistant.text.take(MAX_ANSWER_CONTEXT_CHARS)}")
+        }
+        return sb.toString()
+    }
+
+    private fun isFollowUpQuestion(question: String): Boolean {
+        val tokens = normalizedTokens(question)
+        val raw = question.lowercase()
+        return tokens.any { it in FOLLOWUP_TERMS } ||
+            raw.contains("this") ||
+            raw.contains("that") ||
+            raw.contains(" it ") ||
+            raw.startsWith("tell me more") ||
+            raw.startsWith("explain more")
+    }
+
+    private fun wantsWorkedExample(question: String): Boolean {
+        val tokens = normalizedTokens(question)
+        return tokens.any { it in WORKED_EXAMPLE_TERMS }
+    }
+
+    private fun normalizedTokens(text: String): Set<String> =
+        text.lowercase()
+            .split(Regex("[^a-z]+"))
+            .asSequence()
+            .map(::normalizeToken)
+            .filter { it.isNotEmpty() && it !in STOPWORDS }
+            .toSet()
+
+    private fun normalizeToken(token: String): String {
+        var normalized = token
+        val suffixes = listOf("ation", "ition", "ment", "ingly", "edly", "ing", "ed", "es", "s")
+        for (suffix in suffixes) {
+            if (normalized.length > suffix.length + 2 && normalized.endsWith(suffix)) {
+                normalized = normalized.removeSuffix(suffix)
+                break
+            }
+        }
+        if (normalized.endsWith("i") && normalized.length > 3) {
+            normalized = normalized.dropLast(1) + "y"
+        }
+        return normalized
+    }
+
+    // -------------------------------------------------------------------------
+    // Prompt template
+    // -------------------------------------------------------------------------
+
+    private fun buildGroundedPrompt(
+        passages: String,
+        conversationContext: String,
+        question: String,
+        wantsWorkedExample: Boolean,
+    ): String = """
+$passages
+
+$conversationContext
+
+${answerInstruction(wantsWorkedExample)}
+Question: $question
+""".trimIndent()
+
+    private fun answerInstruction(wantsWorkedExample: Boolean): String =
+        if (wantsWorkedExample) {
+            "Give a small worked example. Show the derivative, integrate it back, and check the result. Do not reply with only a constant or equation."
+        } else {
+            "Answer using these passages. Be direct and explain the relationship, not a loose scenario."
+        }
+
+    // -------------------------------------------------------------------------
+
+    private fun estimatePromptTokens(prompt: String): Int = ceil(prompt.length / 4.0).toInt()
+
+    private fun formatScores(scores: List<Float>): String =
+        scores.joinToString(",") { "%.4f".format(it) }
+
+    private data class ContextSelection(
+        val retrievedCount: Int,
+        val keptChunks: List<Pair<FlatIndex.Entry, String>>,
+        val keptScores: List<Float>,
+        val droppedScores: List<Float>,
+        val maxSimilarity: Float,
+        val contextCharCap: Int,
+        val finalContextChars: Int,
+    )
+
+    override fun onCleared() {
+        super.onCleared()
+        embedderCloseJob?.cancel()
+        embedderCloseJob = null
+        llm.close()
+        embedder?.close()
+        embedder = null
+    }
+}
