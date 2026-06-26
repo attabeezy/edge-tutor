@@ -21,6 +21,24 @@ questions without relying on internet access.
 Current target hardware remains low-end Android devices, with Samsung
 SM-A047F-class devices used as the main performance reference.
 
+Product direction:
+
+- EdgeTutor should be a focused offline tutor, not a generic document chat app.
+- The first curated content scope is Ghana Basic Education, aligned broadly with
+  Ghana Education Service / NaCCA basic education subject areas.
+- MVP subject areas are:
+  - Mathematics
+  - Integrated Science
+  - English Language
+  - Social Studies
+  - Computing
+- Built-in subject corpora should become the primary first-run experience.
+- User-uploaded PDFs should remain supported as a way to personalize or extend a
+  learning area, but they are not the core product identity.
+- Future subject expansion candidates include Career Technology, Creative Arts
+  and Design, Religious and Moral Education, Ghanaian Language, French, and
+  Arabic.
+
 Key product constraints:
 
 - Runs fully offline after model/document assets are present.
@@ -500,6 +518,11 @@ Status: Pending.
 
 Needed:
 
+- Make Ghana Basic Education MVP subjects visible as first-run learning areas:
+  Mathematics, Integrated Science, English Language, Social Studies, and
+  Computing.
+- Treat built-in curated subject corpora as the primary learning entry point.
+- Keep document upload as a secondary personalization/import path.
 - Library/document list polish.
 - Upload and ingestion progress polish.
 - Chat-screen polish.
