@@ -7,7 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import android.os.Environment
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
@@ -68,8 +67,6 @@ class MnnEngine(private val context: Context) : LlmEngine {
 
     companion object {
         private const val TAG                = "MnnEngine"
-        private const val MODEL_DIR_NAME     = "mnn_model"
-        private const val CONFIG_FILE        = "config.json"
         private const val SYSTEM_PROMPT      = "Be concise. ASCII only."
         private const val MAX_RESPONSE_CHARS = 3_000
         private const val WARM_UP_PROMPT     = "Reply with the word ready."
@@ -107,70 +104,24 @@ class MnnEngine(private val context: Context) : LlmEngine {
     // Resolves model directory: internal storage first, then app-specific external
     // storage (getExternalFilesDir — no permission needed on Android 10+).
     private fun resolveModelDir(): File {
-        val internal = File(context.filesDir, MODEL_DIR_NAME)
-        Log.d(TAG, "resolveModelDir: checking internal=${internal.absolutePath} exists=${File(internal, CONFIG_FILE).exists()}")
-        if (File(internal, CONFIG_FILE).exists()) return internal
-        val externalBase = context.getExternalFilesDir(null)
-        Log.d(TAG, "resolveModelDir: externalBase=$externalBase")
-        if (externalBase != null) {
-            val external = File(externalBase, MODEL_DIR_NAME)
-            val cfg = File(external, CONFIG_FILE)
-            Log.d(TAG, "resolveModelDir: external=${external.absolutePath} dirExists=${external.exists()} dirRead=${external.canRead()} cfgExists=${cfg.exists()} cfgRead=${cfg.canRead()}")
-            if (cfg.exists()) return external
-        }
-        return internal  // default; initNativeModel will throw a clear error
+        MnnModelManager.resolveReadyModelDir(context)?.let { return it }
+        return MnnModelManager.internalModelDir(context)  // default; initNativeModel will throw a clear error
     }
 
     override suspend fun copyModelIfNeeded() = copyMutex.withLock {
         withContext(Dispatchers.IO) {
-            val modelDir = File(context.filesDir, MODEL_DIR_NAME)
-            val configFile = File(modelDir, CONFIG_FILE)
-            val modelFiles = listOf(
-                "config.json", "llm_config.json", "tokenizer.txt",
-                "llm.mnn", "llm.mnn.json", "llm.mnn.weight",
-                "visual.mnn", "visual.mnn.weight",
-            )
-            val missingInternalFiles = modelFiles.filterNot { File(modelDir, it).exists() }
-            if (configFile.exists() && missingInternalFiles.isEmpty()) {
+            val modelDir = MnnModelManager.resolveReadyModelDir(context)
+            if (modelDir != null) {
                 EdgeTutorPerf.log("llm_asset_check", "status" to "hit", "model_dir" to modelDir.absolutePath)
                 return@withContext
             }
-            if (configFile.exists()) {
-                Log.w(TAG, "Internal model copy is incomplete; missing: ${missingInternalFiles.joinToString()}")
-            }
-
-            // Try to copy from Downloads/mnn_model/ (populated by the user/developer via adb).
-            // Requires MANAGE_EXTERNAL_STORAGE (Android 11+) or READ_EXTERNAL_STORAGE (≤12).
-            val srcDir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                MODEL_DIR_NAME,
+            val state = MnnModelManager.validate(context)
+            EdgeTutorPerf.log(
+                "llm_asset_check",
+                "status" to state.kind,
+                "model_dir" to (state.modelDir ?: ""),
+                "missing" to state.missingFiles.joinToString(","),
             )
-            if (!srcDir.exists() || !srcDir.canRead()) {
-                Log.w(TAG, "Model source not found or not readable at ${srcDir.absolutePath}.")
-                Log.w(TAG, "Grant 'All files access' to EdgeTutor in Settings → Apps, then restart.")
-                return@withContext
-            }
-
-            Log.d(TAG, "Copying model from ${srcDir.absolutePath} → ${modelDir.absolutePath}")
-            val startMs = System.currentTimeMillis()
-            modelDir.mkdirs()
-            var copiedBytes = 0L
-
-            // Copy by explicit name — avoids File.listFiles() null on Samsung Android 11+.
-            for (name in modelFiles) {
-                val src = File(srcDir, name)
-                val dst = File(modelDir, name)
-                if (!src.exists()) { Log.w(TAG, "Source missing: $name — skipping"); continue }
-                if (dst.exists()) { Log.d(TAG, "Already copied: $name"); continue }
-                Log.d(TAG, "Copying $name (${src.length() / 1_048_576} MB)…")
-                src.copyTo(dst, overwrite = false)
-                copiedBytes += src.length()
-                Log.d(TAG, "Done: $name")
-            }
-
-            val elapsedS = (System.currentTimeMillis() - startMs) / 1000
-            Log.d(TAG, "Model copy complete: ${copiedBytes / 1_048_576} MB in ${elapsedS}s")
-            EdgeTutorPerf.log("llm_asset_copy", "bytes" to copiedBytes, "elapsed_s" to elapsedS)
         }
     }
 
@@ -180,11 +131,11 @@ class MnnEngine(private val context: Context) : LlmEngine {
             if (modelLoaded.get()) return
             withContext(Dispatchers.IO) {
                 val modelDir = resolveModelDir()
-                val configFile = File(modelDir, CONFIG_FILE)
+                val configFile = File(modelDir, MnnModelManager.CONFIG_FILE)
                 if (!configFile.exists()) {
                     throw IllegalStateException(
                         "MNN config.json not found at ${configFile.absolutePath}. " +
-                        "Run copyModelIfNeeded() and ensure model files are on device."
+                        "Import the MNN model folder and ensure all required files are present."
                     )
                 }
                 Log.d(TAG, "Initialising MNN-LLM session with model at: ${modelDir.absolutePath}")
@@ -200,7 +151,7 @@ class MnnEngine(private val context: Context) : LlmEngine {
                 modelLoaded.set(true)
                 EdgeTutorPerf.log(
                     "llm_native_init",
-                    "model_dir"   to MODEL_DIR_NAME,
+                    "model_dir"   to MnnModelManager.MODEL_DIR_NAME,
                     "duration_ms" to EdgeTutorPerf.elapsedMs(startNs),
                 )
                 Log.d(TAG, "MNN-LLM session initialised successfully (ptr=$ptr)")
@@ -272,8 +223,7 @@ class MnnEngine(private val context: Context) : LlmEngine {
     ): String {
         val sb      = StringBuilder()
         var stopped = false
-        var suppressThinking = false
-        var thinkingCarry = ""
+        val thinkingFilter = ThinkingTagFilter()
         val startNs = System.nanoTime()
         var firstTokenLogged = false
         val safePrompt = PromptSanitizer.sanitize(prompt)
@@ -294,13 +244,7 @@ class MnnEngine(private val context: Context) : LlmEngine {
             progressListener = MnnProgressListener { rawToken ->
                 if (stopped || rawToken == null) return@MnnProgressListener stopped
                 val safeDelta = PromptSanitizer.sanitize(rawToken)
-                val delta = filterThinkingDelta(
-                    delta = safeDelta.value,
-                    isSuppressing = { suppressThinking },
-                    setSuppressing = { suppressThinking = it },
-                    getCarry = { thinkingCarry },
-                    setCarry = { thinkingCarry = it },
-                )
+                val delta = thinkingFilter.filter(safeDelta.value)
                 if (delta.isEmpty()) return@MnnProgressListener false
 
                 if (logMetrics && !firstTokenLogged) {
@@ -361,64 +305,6 @@ class MnnEngine(private val context: Context) : LlmEngine {
         "<|im_start|>system\n$SYSTEM_PROMPT<|im_end|>\n" +
         "<|im_start|>user\n$userContent<|im_end|>\n" +
         "<|im_start|>assistant\n"
-
-    private fun filterThinkingDelta(
-        delta: String,
-        isSuppressing: () -> Boolean,
-        setSuppressing: (Boolean) -> Unit,
-        getCarry: () -> String,
-        setCarry: (String) -> Unit,
-    ): String {
-        if (delta.isEmpty()) return ""
-
-        val input = getCarry() + delta
-        setCarry("")
-        val out = StringBuilder()
-        var cursor = 0
-        var suppress = isSuppressing()
-
-        while (cursor < input.length) {
-            if (suppress) {
-                val end = input.indexOf("</think>", cursor)
-                if (end < 0) {
-                    setCarry(input.takeLastPartialPrefixOf("</think>"))
-                    setSuppressing(true)
-                    return out.toString()
-                }
-                cursor = end + "</think>".length
-                suppress = false
-                setSuppressing(false)
-            } else {
-                val start = input.indexOf("<think>", cursor)
-                if (start < 0) {
-                    val text = input.substring(cursor)
-                    val carry = text.takeLastPartialPrefixOf("<think>")
-                    if (carry.isNotEmpty()) {
-                        out.append(text.dropLast(carry.length))
-                        setCarry(carry)
-                    } else {
-                        out.append(text)
-                    }
-                    break
-                }
-                out.append(input.substring(cursor, start))
-                cursor = start + "<think>".length
-                suppress = true
-                setSuppressing(true)
-            }
-        }
-
-        return out.toString()
-    }
-
-    private fun String.takeLastPartialPrefixOf(tag: String): String {
-        val maxLen = minOf(length, tag.length - 1)
-        for (len in maxLen downTo 1) {
-            val suffix = takeLast(len)
-            if (tag.startsWith(suffix)) return suffix
-        }
-        return ""
-    }
 
     private suspend fun <T> withGenerateLock(caller: String, block: suspend () -> T): T {
         val waitStartNs = System.nanoTime()

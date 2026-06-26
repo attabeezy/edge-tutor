@@ -2,6 +2,7 @@ package com.edgetutor.mnn.viewmodel
 
 import android.app.ActivityManager
 import android.app.Application
+import android.net.Uri
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,6 +10,9 @@ import com.edgetutor.mnn.data.db.DocumentEntity
 import com.edgetutor.mnn.ingestion.Embedder
 import com.edgetutor.mnn.llm.LlmEngine
 import com.edgetutor.mnn.llm.MnnEngine
+import com.edgetutor.mnn.llm.MnnModelManager
+import com.edgetutor.mnn.llm.ModelReadinessKind
+import com.edgetutor.mnn.llm.ModelReadinessState
 import com.edgetutor.mnn.llm.PromptSanitizer
 import com.edgetutor.mnn.perf.EdgeTutorPerf
 import com.edgetutor.mnn.store.FlatIndex
@@ -56,15 +60,22 @@ sealed class ThinkingUiState {
  */
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
+    private val mnnEngine: MnnEngine by lazy { MnnEngine(app) }
     // ► Swap MnnEngine for any other LlmEngine implementation here.
-    private val llm: LlmEngine by lazy { MnnEngine(app) }
+    private val llm: LlmEngine by lazy { mnnEngine }
+
+    private val _modelReadiness = MutableStateFlow(MnnModelManager.validate(app))
+    val modelReadiness: StateFlow<ModelReadinessState> = _modelReadiness.asStateFlow()
 
     init {
         // Start native init immediately so it is hidden behind the document-picker.
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                llm.copyModelIfNeeded()
-                llm.initNativeModel()
+                refreshModelReadiness()
+                if (_modelReadiness.value.isReady) {
+                    llm.copyModelIfNeeded()
+                    llm.initNativeModel()
+                }
             } catch (e: Exception) {
                 _errorMessage.value = "Model unavailable: ${e.message}"
             }
@@ -194,6 +205,34 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearError() { _errorMessage.value = null }
 
+    fun refreshModelReadiness() {
+        _modelReadiness.value = MnnModelManager.validate(getApplication())
+    }
+
+    fun importModel(treeUri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            llm.close()
+            try {
+                val state = MnnModelManager.importFromTreeUri(getApplication(), treeUri) { progress ->
+                    _modelReadiness.value = progress
+                }
+                _modelReadiness.value = state
+                if (state.kind == ModelReadinessKind.READY) {
+                    llm.copyModelIfNeeded()
+                    llm.initNativeModel()
+                } else {
+                    _errorMessage.value = state.message ?: "Model import did not complete."
+                }
+            } catch (e: Exception) {
+                _modelReadiness.value = ModelReadinessState(
+                    kind = ModelReadinessKind.ERROR,
+                    message = e.message ?: e.javaClass.simpleName,
+                )
+                _errorMessage.value = "Model import failed: ${e.message}"
+            }
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Querying
     // -------------------------------------------------------------------------
@@ -201,6 +240,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun ask(question: String) {
         val idx = index ?: return
         if (_isWarmingUp.value) return
+        if (!_modelReadiness.value.isReady) {
+            _errorMessage.value = "Import the MNN model before asking questions."
+            return
+        }
 
         viewModelScope.launch(Dispatchers.IO) {
             embedderCloseJob?.cancel()

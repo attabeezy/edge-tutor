@@ -6,6 +6,7 @@
 #include <streambuf>
 #include <atomic>
 #include <unordered_map>
+#include <functional>
 
 #include "llm/llm.hpp"
 
@@ -14,6 +15,17 @@
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
 
 using namespace MNN::Transformer;
+
+static void restoreAndroidSteppingStatusIfNeeded(Llm* llm) {
+    if (!llm) return;
+    auto* context = llm->getContext();
+    if (!context) return;
+    if (context->status == MNN::Transformer::LlmStatus::MAX_TOKENS_FINISHED ||
+        context->status == MNN::Transformer::LlmStatus::NORMAL_FINISHED) {
+        auto* mutableContext = const_cast<MNN::Transformer::LlmContext*>(context);
+        mutableContext->status = MNN::Transformer::LlmStatus::RUNNING;
+    }
+}
 
 static void logLongMessage(android_LogPriority priority,
                            const char* prefix,
@@ -38,15 +50,19 @@ public:
         : env_(env), listener_(listener), onProgress_(onProgress) {}
 
     bool isStopped() const { return stopped_; }
+    bool isEop() const { return eop_; }
+
+    void flushPending() {
+        if (!utf8Buffer_.empty()) {
+            emitChunk(utf8Buffer_);
+            utf8Buffer_.clear();
+        }
+    }
 
 protected:
     std::streamsize xsputn(const char* s, std::streamsize n) override {
         if (stopped_ || !s || n <= 0) return n;
-        std::string chunk(s, static_cast<size_t>(n));
-        jstring jtoken = env_->NewStringUTF(chunk.c_str());
-        jboolean stop = env_->CallBooleanMethod(listener_, onProgress_, jtoken);
-        env_->DeleteLocalRef(jtoken);
-        if (stop) stopped_ = true;
+        processUtf8(s, static_cast<size_t>(n));
         return n;
     }
 
@@ -59,10 +75,54 @@ protected:
     }
 
 private:
+    static int utf8CharLength(unsigned char byte) {
+        if ((byte & 0x80) == 0) return 1;
+        if ((byte & 0xE0) == 0xC0) return 2;
+        if ((byte & 0xF0) == 0xE0) return 3;
+        if ((byte & 0xF8) == 0xF0) return 4;
+        return 0;
+    }
+
+    void processUtf8(const char* s, size_t len) {
+        utf8Buffer_.append(s, len);
+        size_t i = 0;
+        std::string completeChars;
+        while (i < utf8Buffer_.size()) {
+            int charLen = utf8CharLength(static_cast<unsigned char>(utf8Buffer_[i]));
+            if (charLen == 0) {
+                // Drop invalid leading byte rather than handing invalid modified UTF-8 to JNI.
+                i += 1;
+                continue;
+            }
+            if (i + static_cast<size_t>(charLen) > utf8Buffer_.size()) break;
+            completeChars.append(utf8Buffer_, i, static_cast<size_t>(charLen));
+            i += static_cast<size_t>(charLen);
+        }
+        utf8Buffer_ = utf8Buffer_.substr(i);
+        if (!completeChars.empty()) emitChunk(completeChars);
+    }
+
+    void emitChunk(const std::string& rawChunk) {
+        if (stopped_ || rawChunk.empty()) return;
+        const size_t eopPos = rawChunk.find("<eop>");
+        std::string chunk = rawChunk;
+        if (eopPos != std::string::npos) {
+            eop_ = true;
+            chunk = rawChunk.substr(0, eopPos);
+        }
+        if (chunk.empty() || !listener_ || !onProgress_) return;
+        jstring jtoken = env_->NewStringUTF(chunk.c_str());
+        jboolean stop = env_->CallBooleanMethod(listener_, onProgress_, jtoken);
+        env_->DeleteLocalRef(jtoken);
+        if (stop) stopped_ = true;
+    }
+
     JNIEnv*   env_;
     jobject   listener_;
     jmethodID onProgress_;
     bool      stopped_ = false;
+    bool      eop_ = false;
+    std::string utf8Buffer_;
 };
 
 // ---------------------------------------------------------------------------
@@ -180,11 +240,16 @@ Java_com_edgetutor_mnn_llm_MnnNativeBridge_submitPrompt(JNIEnv* env, jclass /*cl
     KotlinCallbackBuf cbBuf(env, progressListener, onProgress);
     std::ostream os(&cbBuf);
 
-    // Run generation; MNN writes decoded tokens to os as they're produced.
-    // max_new_tokens=-1 lets MNN use its own default (usually limited by context).
-    // Pass end_with=nullptr since Kotlin handles stop-sequence scanning.
     constexpr int MAX_NEW_TOKENS = 600;
-    llm->response(inputIds, &os, nullptr, MAX_NEW_TOKENS);
+    llm->response(inputIds, &os, "<eop>", 0);
+    restoreAndroidSteppingStatusIfNeeded(llm);
+    int generated = 0;
+    while (!cbBuf.isStopped() && !cbBuf.isEop() && generated < MAX_NEW_TOKENS) {
+        llm->generate(1);
+        generated++;
+        restoreAndroidSteppingStatusIfNeeded(llm);
+    }
+    cbBuf.flushPending();
 
     // Signal EOP to the Kotlin side (null token = generation complete)
     if (progressListener && onProgress) {

@@ -93,6 +93,51 @@ Current Python stack:
 The Python and Android retrieval/routing paths are similar but not identical.
 Android is the source of truth for shipped behavior.
 
+### Android MNN Harness
+
+`android-mnn/` is the active MNN engineering harness for evaluating whether the
+app should move from the Llamatik/GGUF runtime toward an MNN-LLM runtime.
+
+Current harness direction:
+
+- Keep the user-facing product shape from `android-ltk`: single-document offline
+  RAG tutoring, local PDF ingestion, grounded chat, source excerpts, and low-end
+  Android performance as the primary constraint.
+- Use `MNN/apps/Android/MnnLlmChat` as the reference implementation for native
+  model loading and MNN-LLM session behavior.
+- Keep model files in app-owned storage instead of requesting broad shared
+  storage access.
+- Treat model readiness as an explicit app state. Chat is locked until required
+  MNN files are present and validated.
+- Preserve the same retrieval and ingestion architecture where possible:
+  PDF extraction, chunking, ONNX embeddings, `FlatIndex`, Room metadata, and
+  Compose UI.
+- Instrument the full query path so the harness can answer whether bottlenecks
+  are ingestion, retrieval, prompt construction, native prefill, decode, memory,
+  or UI flush behavior.
+
+Current MNN harness implementation notes:
+
+- `MnnModelManager` validates and imports model folders into
+  `files/mnn_model`.
+- Required Qwen MNN files are currently:
+  `config.json`, `llm_config.json`, `tokenizer.txt`, `llm.mnn`,
+  `llm.mnn.json`, `llm.mnn.weight`, `visual.mnn`, and
+  `visual.mnn.weight`.
+- The visual graph files are required because the tested Qwen package reports
+  `is_visual=1` and `has_deepstack=1`; without them native load fails even for
+  text-only RAG.
+- Native streaming now buffers UTF-8 boundaries before sending chunks to Kotlin.
+- Native decode uses stepped generation so first-token and total-decode timing
+  can be measured from the app.
+- `ThinkingTagFilter` strips model thinking tags from streamed UI output.
+- The app no longer requests all-files/shared-storage permissions for model
+  setup.
+
+The MNN harness is not yet declared as the default product app. It is the
+current runtime-validation branch for deciding whether MNN should become the
+main Android runtime.
+
 ---
 
 ## 3. Required Local Assets
@@ -303,6 +348,86 @@ Current required device validation:
 - Confirm memory behavior during ingestion and generation.
 - Confirm user-facing answer quality on real textbook content.
 
+### Android MNN Harness Device Validation
+
+Measured on June 26, 2026 with:
+
+- Device: Samsung SM-A047F-class target, device model `SM_A047F`
+- App: `android-mnn/` debug build
+- Runtime: MNN-LLM through the app JNI harness
+- Model package: Qwen MNN package with `is_visual=1` and `has_deepstack=1`
+- Document: `Calculus Made Easy.pdf`
+- Query: `what is calculus`
+
+Validated behavior:
+
+- App launches without the previous model-readiness null-state crash.
+- Model loads from app-owned `files/mnn_model`.
+- Native MNN init succeeds after including `visual.mnn` and
+  `visual.mnn.weight`.
+- Existing document index survives app reinstall when data is preserved.
+- Document screen opens with `Calculus Made Easy.pdf` in ready state.
+- Warm-up loads the index and warms both embedder and LLM.
+- A grounded query completes end to end with retrieval, prompt build, streaming,
+  and total-answer instrumentation.
+
+Measured ingestion result:
+
+- Pages: `292`
+- Chunks: `173`
+- Total ingestion time: `94,009 ms`
+- Throughput: `3.106 pages/sec`
+- Index file: about `573 KB`
+- Memory at ingestion end: about `903 MB` available, `3,707 MB` total,
+  Android low-memory flag `false`
+
+Measured warm-up result after ingestion:
+
+- Index load: `104 ms`
+- Embedder warm-up: `1,894 ms`
+- LLM warm-up first token: `6,640 ms`
+- LLM warm-up total: `6,914 ms`
+- Warm-up prompt length: `25`
+- Warm-up decode length: `6`
+
+Measured grounded query result:
+
+- Query memory policy: `888 MB` available, no embedder release
+- Query embedding: `679 ms`
+- Retrieval search: `60 ms`
+- Prompt build: `33 ms`
+- Route: `GROUNDED`
+- Retrieved candidates: `5`
+- Kept chunks: `2`
+- Prompt chars: `1,729`
+- Estimated prompt tokens: about `433`
+- Native first token: `25,900 ms`
+- UI-visible first token: `26,892 ms`
+- Total answer time: `36,558 ms`
+- Native decode total: `35,725 ms`
+- Prompt length reported by native path: `421`
+- Decode length: `71`
+- Native prefill: `24,417,180 us`
+- Native decode: `9,560,765 us`
+
+Measured memory snapshots:
+
+- After model loaded before ingestion: about `710 MB PSS`, `86 MB RSS`,
+  `667 MB swap PSS`
+- During ingestion: about `903 MB PSS`, `289 MB RSS`, `663 MB swap PSS`
+- After warm-up: about `855 MB PSS`, `515 MB RSS`, `382 MB swap PSS`
+- After answer: about `899 MB PSS`, `649 MB RSS`, `295 MB swap PSS`
+
+MNN harness validation conclusion:
+
+- Ingestion and retrieval are not the bottleneck on this device.
+- The dominant query bottleneck is MNN native prompt prefill.
+- Current first-token latency is usable for engineering validation but not yet a
+  polished student experience on low-end hardware.
+- The product path worth taking is to continue the MNN harness only if the next
+  pass focuses on prompt/prefill reduction, smaller or better-fit MNN model
+  packages, and an explicit waiting/thinking UI for the first-token gap.
+
 ---
 
 ## 6. Known Issues and Risks
@@ -315,6 +440,21 @@ performance for the Qwen2.5 default still needs repeated measurement.
 Target:
 
 - Visible time to first token below 30 seconds on Samsung SM-A047F-class hardware.
+
+### MNN Harness Prefill Latency
+
+The June 26, 2026 `android-mnn/` device run completed successfully, but native
+prefill dominated the grounded-query latency:
+
+- Native first token: `25.9s`
+- UI-visible first token: `26.9s`
+- Total answer: `36.6s`
+- Native prefill: about `24.4s`
+- Retrieval plus prompt construction: under `100 ms` after query embedding
+
+This means the next MNN work should not focus on vector search or PDF ingestion
+first. The highest-leverage work is smaller prompts, stricter context budgets,
+model/package selection, and better first-token waiting UX.
 
 ### Small-Model Answer Quality Needs Sampling
 
@@ -349,6 +489,11 @@ device through repeated consecutive queries.
 The Android project is not fully self-contained because large model assets are
 ignored. This is intentional, but onboarding must include copying/generating
 assets before building.
+
+For the MNN harness, a fresh local setup must include the full MNN model folder,
+including `visual.mnn` and `visual.mnn.weight` for the tested Qwen package.
+Missing visual files can make the app report a model as incomplete or make
+native MNN load fail, depending on the build being tested.
 
 ### Python Prototype Is Not Android Parity
 
@@ -462,6 +607,37 @@ Potential work:
 - Measure any runtime changes on device before adopting them.
 - Do not record a runtime change as implemented until code and device logs
   confirm it.
+
+### Phase 7B: MNN Runtime Harness
+
+Status: In validation.
+
+Implemented:
+
+- `android-mnn/` app harness with MNN-LLM native loading.
+- App-owned model import and readiness validation.
+- MNN model readiness UI.
+- Native first-token and total-decode instrumentation.
+- UTF-8-safe streamed chunks from native code.
+- Thinking-tag filtering for streamed model output.
+- Device-validated ingestion, warm-up, and one grounded query on Samsung
+  SM-A047F-class hardware.
+
+Current direction:
+
+- Keep `android-mnn/` as the runtime engineering harness.
+- Do not switch the default product app from `android-ltk/` to `android-mnn/`
+  until repeated query quality, latency, memory, and UX validation justify it.
+- Prioritize prefill reduction before broader UI/product expansion in the MNN
+  harness.
+
+Pending:
+
+- Run repeated warm and cold grounded queries.
+- Compare smaller prompt budgets and kept-chunk counts on device.
+- Test follow-up, out-of-document academic, and non-academic query behavior.
+- Test at least one smaller or more text-focused MNN package.
+- Add UX affordances for the first-token wait window.
 
 ### Phase 8: Model Selection
 
@@ -608,10 +784,18 @@ pwsh -File scripts/check_repo_hygiene.ps1
 
 ## 10. Immediate Next Steps
 
-1. Repeat Android device measurements with the current Qwen2.5 default.
-2. Confirm visible TTFT, native TTFT, total answer time, and memory behavior.
-3. Run grounded, out-of-document academic, non-academic, and follow-up query samples.
-4. Check for context bleed across consecutive turns.
-5. Decide whether Qwen2.5 remains the default after device-quality sampling.
-6. Clean up benchmark scripts so Python/Ollama and Android measurements are not
+1. For `android-mnn/`, repeat grounded query measurements with smaller prompt
+   budgets and stricter context caps.
+2. For `android-mnn/`, run follow-up, out-of-document academic, and
+   non-academic query samples against the loaded textbook.
+3. For `android-mnn/`, test at least one smaller or more text-focused MNN model
+   package and compare native prefill, first token, total answer, memory, and
+   answer quality.
+4. For `android-mnn/`, improve the first-token waiting UX because the validated
+   first visible token is currently about `26.9s` on target hardware.
+5. For `android-ltk/`, repeat Android device measurements with the current
+   Qwen2.5 GGUF default before making release claims.
+6. Check for context bleed across consecutive turns in both Android runtimes.
+7. Decide whether Qwen2.5 GGUF remains the default after device-quality sampling.
+8. Clean up benchmark scripts so Python/Ollama and Android measurements are not
    confused.

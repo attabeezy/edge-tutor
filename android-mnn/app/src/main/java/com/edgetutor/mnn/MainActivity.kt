@@ -1,11 +1,8 @@
 package com.edgetutor.mnn
 
-import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.provider.Settings
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -32,6 +29,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -58,10 +60,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edgetutor.mnn.data.db.DocumentEntity
 import com.edgetutor.mnn.data.db.IngestionStatus
 import com.edgetutor.mnn.ingestion.PdfExtractor
+import com.edgetutor.mnn.llm.ModelReadinessKind
+import com.edgetutor.mnn.llm.ModelReadinessState
 import com.edgetutor.mnn.ui.LatexInlineProcessor
 import com.edgetutor.mnn.viewmodel.ChatMessage
 import com.edgetutor.mnn.viewmodel.ChatViewModel
@@ -74,6 +79,7 @@ import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import kotlinx.coroutines.delay
 import android.widget.TextView
+import android.content.Context
 
 private val AppGreen = Color(0xFF2F7D4B)
 private val AppGreenSoft = Color(0xFFDCEFD9)
@@ -84,7 +90,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PdfExtractor.init(this)
-        requestAllFilesAccessIfNeeded()
         setContent {
             MaterialTheme(
                 colorScheme = lightColorScheme(
@@ -112,18 +117,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // On Android 11+, prompt for "All files access" so the app can copy the model
-    // from Downloads/mnn_model/ to internal storage on first launch.
-    private fun requestAllFilesAccessIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-                startActivity(intent)
-            }
-        }
-    }
 }
 
 @Composable
@@ -139,13 +132,16 @@ fun EdgeTutorApp(
     val warmingUp by chatVm.isWarmingUp.collectAsState()
     val errorMsg by chatVm.errorMessage.collectAsState()
     val activeDocId by chatVm.activeDocumentId.collectAsState()
+    val modelReadiness by chatVm.modelReadiness.collectAsState()
+    val context = LocalContext.current
     var question by remember { mutableStateOf("") }
 
     val currentDoc = documents.firstOrNull()
     val readyDoc = currentDoc?.takeIf { it.status == IngestionStatus.DONE }
-    val chatLocked = currentDoc == null || currentDoc.status != IngestionStatus.DONE || warmingUp
+    val modelReady = modelReadiness.isReady
+    val chatLocked = !modelReady || currentDoc == null || currentDoc.status != IngestionStatus.DONE || warmingUp
     val canSend = question.isNotBlank() && !chatLocked && !thinking
-    val canAdd = question.isBlank() && !thinking
+    val canAdd = modelReady && question.isBlank() && !thinking
 
     val statusText = currentDoc?.let { doc ->
         when {
@@ -163,8 +159,15 @@ fun EdgeTutorApp(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
-        val name = uri.lastPathSegment ?: "document.pdf"
+        val name = displayNameForUri(context, uri)
         ingestVm.ingest(uri, name)
+    }
+
+    val modelPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        chatVm.importModel(uri)
     }
 
     LaunchedEffect(readyDoc?.id, activeDocId) {
@@ -184,6 +187,14 @@ fun EdgeTutorApp(
         HeaderBlock(title = currentDoc?.displayName ?: "EdgeTutor")
 
         Spacer(Modifier.height(18.dp))
+
+        if (!modelReady) {
+            ModelReadinessStrip(
+                state = modelReadiness,
+                onImport = { modelPicker.launch(null) },
+            )
+            Spacer(Modifier.height(12.dp))
+        }
 
         if (currentDoc != null) {
             DocumentStrip(
@@ -219,7 +230,11 @@ fun EdgeTutorApp(
         ComposerBar(
             value = question,
             onValueChange = { question = it },
-            placeholder = if (currentDoc == null) "add a document to start" else "ask about this document",
+            placeholder = when {
+                !modelReady -> "import the MNN model to start"
+                currentDoc == null -> "add a document to start"
+                else -> "ask about this document"
+            },
             sendEnabled = canSend,
             addEnabled = canAdd,
             inputEnabled = !chatLocked && !thinking,
@@ -289,8 +304,9 @@ private fun DocumentStrip(
                 Text("stop", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        IconGlyphButton(
-            text = "x",
+        IconActionButton(
+            icon = Icons.Filled.Close,
+            contentDescription = "Delete document",
             onClick = onDelete,
             enabled = true,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -422,15 +438,93 @@ private fun MessageRow(msg: ChatMessage) {
                     text = msg.text,
                 )
                 if (msg.sources.isNotEmpty()) {
-                    Text(
-                        text = msg.sources.first(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    SourceCard(text = msg.sources.first())
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SourceCard(text: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Text(
+                text = "Source",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private fun displayNameForUri(context: Context, uri: Uri): String =
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) cursor.getString(idx) else null
+            } else {
+                null
+            }
+        }
+        ?: uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
+        ?: "document"
+
+@Composable
+private fun ModelReadinessStrip(
+    state: ModelReadinessState,
+    onImport: () -> Unit,
+) {
+    val message = when (state.kind) {
+        ModelReadinessKind.MISSING -> "MNN model not imported"
+        ModelReadinessKind.IMPORTING -> state.message ?: "importing model"
+        ModelReadinessKind.INCOMPLETE -> state.message ?: "model files are incomplete"
+        ModelReadinessKind.ERROR -> state.message ?: "model import failed"
+        ModelReadinessKind.READY -> "model ready"
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Model setup",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = if (state.kind == ModelReadinessKind.IMPORTING && state.progressTotal > 0) {
+                    "$message ${state.progressCurrent}/${state.progressTotal}"
+                } else {
+                    message
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(
+            onClick = onImport,
+            enabled = state.kind != ModelReadinessKind.IMPORTING,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            Text("import")
         }
     }
 }
@@ -548,8 +642,9 @@ private fun ComposerBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        IconGlyphButton(
-            text = "+",
+        IconActionButton(
+            icon = Icons.Filled.Add,
+            contentDescription = "Add document",
             onClick = onAdd,
             enabled = addEnabled,
             tint = MaterialTheme.colorScheme.primary,
@@ -582,8 +677,9 @@ private fun ComposerBar(
             singleLine = false,
             maxLines = 4,
         )
-        IconGlyphButton(
-            text = ">",
+        IconActionButton(
+            icon = Icons.AutoMirrored.Filled.Send,
+            contentDescription = "Send question",
             onClick = onSend,
             enabled = sendEnabled,
             tint = MaterialTheme.colorScheme.primary,
@@ -592,8 +688,9 @@ private fun ComposerBar(
 }
 
 @Composable
-private fun IconGlyphButton(
-    text: String,
+private fun IconActionButton(
+    icon: ImageVector,
+    contentDescription: String,
     onClick: () -> Unit,
     enabled: Boolean,
     tint: Color,
@@ -608,11 +705,11 @@ private fun IconGlyphButton(
             )
             .size(42.dp),
     ) {
-        Text(
-            text = text,
-            color = if (enabled) tint else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Medium,
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) tint else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+            modifier = Modifier.size(21.dp),
         )
     }
 }
