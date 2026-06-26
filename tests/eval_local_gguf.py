@@ -45,6 +45,7 @@ MIN_LEXICAL_OVERLAP = 2
 SYSTEM_PROMPT = "Be concise."
 
 DEFAULT_MODEL_PATHS = [
+    "models/qwen2.5-0.5b-instruct-q4_k_m.gguf",
     "models/granite-4.0-h-350m/granite-4.0-h-350m-Q4_K_M.gguf",
     "models/lfm2.5-350m/LFM2.5-350M-Q4_K_M.gguf",
     "models/lfm2-350m-math/LFM2-350M-Math-Q4_K_M.gguf",

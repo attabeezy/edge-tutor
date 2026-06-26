@@ -19,8 +19,8 @@ import kotlin.coroutines.resumeWithException
  * LLM engine backed by llama.cpp via Llamatik.
  *
  * Model file required in assets/:
- *   LFM2.5-350M-Q4_K_M.gguf  (~267 MB)
- *   Download: hf download LiquidAI/LFM2.5-350M-GGUF LFM2.5-350M-Q4_K_M.gguf
+ *   qwen2.5-0.5b-instruct-q4_k_m.gguf  (~469 MB)
+ *   Download/copy into models/ before packaging Android assets.
  *   Do NOT commit to git — copy manually before build.
  *
  * Llamatik is the only packaged LLM runtime in the Android app.
@@ -35,7 +35,7 @@ class LlamaEngine(private val context: Context) : LlmEngine {
 
     companion object {
         private const val TAG = "LlamaEngine"
-        private const val MODEL_ASSET        = "LFM2.5-350M-Q4_K_M.gguf"
+        private const val MODEL_ASSET        = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
         private const val SYSTEM_PROMPT      = "Be concise. ASCII only."
         private const val MAX_RESPONSE_CHARS = 3_000
         private const val WARM_UP_PROMPT     = "Reply with the word ready."
@@ -68,7 +68,7 @@ class LlamaEngine(private val context: Context) : LlmEngine {
                 if (!assetExists(MODEL_ASSET)) {
                     throw IllegalStateException(
                         "Missing model asset '$MODEL_ASSET' in app/src/main/assets/. " +
-                        "Copy it from models/lfm2.5-350m/ before launching the app."
+                        "Copy it from models/ before launching the app."
                     )
                 }
                 context.assets.open(MODEL_ASSET).use { src ->

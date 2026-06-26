@@ -65,7 +65,7 @@ dependencies {
     // Gson — FlatIndex JSON serialisation
     implementation("com.google.code.gson:gson:2.10.1")
 
-    // Llamatik (llama.cpp wrapper for GGUF models — Gemma 3 270M)
+    // Llamatik (llama.cpp wrapper for GGUF chat models)
     // Do not call sessionReset(); generation is isolated by the app-level mutex.
     // Verify latest version at https://github.com/ferranpons/Llamatik/releases
     implementation("com.llamatik:library-android:1.7.0")

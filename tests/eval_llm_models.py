@@ -9,7 +9,7 @@ This is a pragmatic benchmark for this repo's actual workload:
 
 Usage:
     python tests/eval_llm_models.py --doc CalculusMadeEasy
-    python tests/eval_llm_models.py --doc CalculusMadeEasy --models lfm2.5:350m granite4:350m-h
+    python tests/eval_llm_models.py --doc CalculusMadeEasy --models qwen2.5:0.5b lfm2.5:350m granite4:350m-h
     python tests/eval_llm_models.py --doc CalculusMadeEasy --report reports/model_benchmark.md
 """
 from __future__ import annotations
@@ -62,6 +62,7 @@ FOLLOWUP_CASES = [
 ]
 
 DEFAULT_MODELS = [
+    "qwen2.5:0.5b",
     "lfm2.5:350m",
     "granite4:350m-h",
     "lfm2-math",

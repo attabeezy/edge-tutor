@@ -23,23 +23,24 @@ Not tracked in git - store working copies in `models/` at the repo root. `python
 
 | File | Source | Size |
 |---|---|---|
-| `LFM2.5-350M-Q4_K_M.gguf` | HuggingFace: `LiquidAI/LFM2.5-350M-GGUF` | ~267 MB |
+| `qwen2.5-0.5b-instruct-q4_k_m.gguf` | HuggingFace GGUF for Qwen2.5 0.5B Instruct Q4 | ~469 MB |
 | `arctic.onnx` | Run `python scripts/export_onnx.py` | ~23 MB (int8) |
 | `vocab.txt` | Same export script | ~226 KB |
 
 ```bash
-hf download LiquidAI/LFM2.5-350M-GGUF LFM2.5-350M-Q4_K_M.gguf
+# From the repo root, after placing the GGUF in models/
+copy models/qwen2.5-0.5b-instruct-q4_k_m.gguf android-ltk/app/src/main/assets/
 ```
 
 ## Local GGUF swap candidates
 
-`LlamaEngine.MODEL_ASSET` currently points to `LFM2.5-350M-Q4_K_M.gguf`. To test another GGUF, copy it from `models/` into `android-ltk/app/src/main/assets/`, update `MODEL_ASSET`, rebuild, and reinstall the debug APK.
+`LlamaEngine.MODEL_ASSET` currently points to `qwen2.5-0.5b-instruct-q4_k_m.gguf`. To test another GGUF, copy it from `models/` into `android-ltk/app/src/main/assets/`, update `MODEL_ASSET`, rebuild, and reinstall the debug APK.
 
 | File in `models/` | Size | Test priority |
 |---|---:|---|
+| `LFM2.5-350M-Q4_K_M.gguf` | 219 MB | Previous default; smallest known baseline. |
 | `LFM2-350M-Math-Q4_K_M.gguf` | 219 MB | First math-quality A/B test; same footprint class as current. |
 | `granite-4.0-h-350m-Q4_K_M.gguf` | 212 MB | Same footprint class; useful general instruction baseline. |
-| `qwen2.5-0.5b-instruct-q4_k_m.gguf` | 469 MB | Stronger instruct candidate; watch TTFT and memory. |
 | `Qwen_Qwen3-0.6B-Q4_K_M.gguf` | 462 MB | Stronger ceiling candidate; may need prompt tuning. |
 | `Qwen3-0.6B-Q8_0.gguf` | 610 MB | Last-resort ceiling test for 1 GB devices; highest memory risk. |
 

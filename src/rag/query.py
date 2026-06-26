@@ -14,7 +14,7 @@ from src.ingestion.pipeline import retrieve, get_embed_model, EMBED_MODEL as DEF
 # ------------------------------------------------------------------
 # Config
 # ------------------------------------------------------------------
-LLM_MODEL            = os.getenv("EDGE_TUTOR_LLM_MODEL", "lfm2.5:350m")
+LLM_MODEL            = os.getenv("EDGE_TUTOR_LLM_MODEL", "qwen2.5:0.5b")
 INDEX_DIR            = "data/index"
 TOP_K                = 3
 MAX_RELEVANT_DISTANCE = 1.4   # L2 threshold; queries above this aren't in the document

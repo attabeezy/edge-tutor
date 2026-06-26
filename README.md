@@ -7,7 +7,7 @@ An offline RAG (Retrieval-Augmented Generation) tutoring assistant for Android. 
 - **100% Offline** — Runs entirely on-device with zero network dependency
 - **PDF/TXT Ingestion** — Upload textbooks, get AI-powered answers
 - **Lightweight Models** — Optimized for ~1 GB free RAM Android devices
-- **LFM2.5-350M** — Quantized SLM for on-device inference via llama.cpp
+- **Qwen2.5 0.5B Instruct** — Quantized SLM for on-device inference via llama.cpp
 
 ## Project Structure
 
@@ -51,7 +51,7 @@ python -c "from src.ingestion.pipeline import ingest; ingest('data/raw/MyBook.pd
 python -m src.rag.repl MyBook
 
 # Override the chat model for an A/B test
-python -m src.rag.repl MyBook -m lfm2.5:350m
+python -m src.rag.repl MyBook -m qwen2.5:0.5b
 ```
 
 ### Android App
@@ -75,11 +75,12 @@ python tests/eval_llm_models.py --doc CalculusMadeEasy --report reports/model-be
 
 By default this compares:
 
+- `qwen2.5:0.5b`
 - `lfm2.5:350m`
 - `granite4:350m-h`
 - `lfm2-math`
 
-To download GGUF variants of those candidate models directly from Hugging Face into `models/`:
+To download the Granite/LFM comparison GGUF variants directly from Hugging Face into `models/`:
 
 ```bash
 python scripts/download_hf_models.py
@@ -88,7 +89,7 @@ python scripts/download_hf_models.py
 If you want the Python prototype to default to a different model without editing code, set:
 
 ```powershell
-$env:EDGE_TUTOR_LLM_MODEL = "lfm2.5:350m"
+$env:EDGE_TUTOR_LLM_MODEL = "qwen2.5:0.5b"
 ```
 
 To benchmark local GGUF files directly instead of Ollama, install `llama-cpp-python` and run:
