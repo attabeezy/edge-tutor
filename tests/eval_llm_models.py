@@ -3,7 +3,7 @@ Compare multiple Ollama chat models on the existing EdgeTutor RAG pipeline.
 
 This is a pragmatic benchmark for this repo's actual workload:
   - grounded answers on in-document questions
-  - refusal on out-of-scope questions
+  - answers on out-of-document questions from the best retrieved passages
   - basic follow-up continuation behavior
   - latency per turn
 
@@ -117,7 +117,7 @@ def evaluate_model(model: str, doc_name: str) -> dict:
     for question in OUT_OF_SCOPE_CASES:
         answer, _history, latency = run_turn(question, doc_name, model)
         latencies.append(latency)
-        passed = is_refusal(answer)
+        passed = not is_refusal(answer)
         oos_results.append(
             {
                 "question": question,
@@ -183,7 +183,7 @@ def format_report(doc_name: str, embed_model: str, results: list[dict]) -> str:
         "",
         "## Summary",
         "",
-        "| Model | Score | Covered | OOS refusal | Follow-up | Avg latency (s) | Max latency (s) |",
+        "| Model | Score | Covered | OOS answered | Follow-up | Avg latency (s) | Max latency (s) |",
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
 

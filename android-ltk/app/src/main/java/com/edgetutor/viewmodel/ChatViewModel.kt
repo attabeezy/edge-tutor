@@ -94,19 +94,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
          */
         private const val LOW_MEM_THRESHOLD_MB = 200L
         private const val EMBEDDER_CLOSE_DELAY_MS = 30_000L  // 30-second idle grace window
-        /**
-         * Cosine similarity floor for in-scope queries.
-         * Derived from Python MAX_RELEVANT_DISTANCE=1.4 on normalized vectors:
-         *   cos_sim = 1 - (dist² / 2) = 1 - (1.96 / 2) ≈ 0.02
-         */
-        private const val MIN_COSINE_SIM = 0.02f
-        private const val MIN_LEXICAL_OVERLAP = 1
         private const val RETRIEVAL_CANDIDATE_K = 5
         private const val MAX_KEPT_CONTEXT_CHUNKS = 2
         private const val MAX_CONTEXT_CHARS_PER_CHUNK = 800
         private const val MAX_FOLLOWUP_CONTEXT_CHARS = 180
         private const val MAX_ANSWER_CONTEXT_CHARS = 250
-        private const val STRONG_SEMANTIC_MATCH_SIM = 0.70f
 
         private val STOPWORDS = setOf(
             "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
@@ -116,17 +108,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             "which", "this", "that", "these", "those", "of", "in", "on", "at",
             "to", "for", "with", "by", "from", "about", "into", "than", "or",
             "and", "but", "if", "not", "no", "so",
-        )
-
-        private val ACADEMIC_TERMS = setOf(
-            "academic", "algebra", "analyze", "answer", "biology", "calculate",
-            "calculus", "chemistry", "compare", "concept", "define", "derivative",
-            "differentiate", "differential", "equation", "example", "explain",
-            "factor", "formula", "function", "geometry", "graph", "history",
-            "homework", "integral", "interpret", "lesson", "limit", "math",
-            "physics", "practice", "problem", "proof", "reading", "science",
-            "slope", "solve", "study", "summarize", "teach", "theorem", "tutor",
-            "understand", "word",
         )
 
         private val FOLLOWUP_TERMS = setOf(
@@ -299,35 +280,24 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 // 3. Route the query and build the shortest prompt that can answer it.
                 val promptBuildStartNs = System.nanoTime()
                 val contextSelection = selectContext(searchResults)
-                val routeDecision = routeQuery(question, contextSelection)
                 val sanitizedQuestion = PromptSanitizer.sanitize(question)
                 val rawContextText = contextSelection.keptChunks.joinToString("\n\n") { (_, chunk) -> chunk }
                 val sanitizedContext = PromptSanitizer.sanitize(rawContextText)
-                val prompt = when (routeDecision.route) {
-                    QueryRoute.GROUNDED -> buildGroundedPrompt(
-                        passages = sanitizedContext.value,
-                        conversationContext = PromptSanitizer.sanitize(conversationContext).value,
-                        question = sanitizedQuestion.value,
-                        wantsWorkedExample = wantsWorkedExample(question),
-                    )
-                    QueryRoute.GENERAL_REASONING -> buildGeneralReasoningPrompt(
-                        conversationContext = PromptSanitizer.sanitize(conversationContext).value,
-                        question = sanitizedQuestion.value,
-                        wantsWorkedExample = wantsWorkedExample(question),
-                    )
-                    QueryRoute.UNRELATED -> ""
-                }
+                val prompt = buildGroundedPrompt(
+                    passages = sanitizedContext.value,
+                    conversationContext = PromptSanitizer.sanitize(conversationContext).value,
+                    question = sanitizedQuestion.value,
+                    wantsWorkedExample = wantsWorkedExample(question),
+                )
                 val sanitizedPrompt = PromptSanitizer.sanitize(prompt)
                 val promptBuildMs = EdgeTutorPerf.elapsedMs(promptBuildStartNs)
                 EdgeTutorPerf.log("query_stage_timing", "doc_id" to docId, "prompt_build_ms" to promptBuildMs)
                 EdgeTutorPerf.log(
                     "query_route",
                     "doc_id" to docId,
-                    "query_route" to routeDecision.route.name,
-                    "route_reason" to routeDecision.reason,
+                    "query_route" to "GROUNDED",
+                    "route_reason" to "retrieved_context",
                     "max_sim" to contextSelection.maxSimilarity,
-                    "lexical_overlap" to routeDecision.lexicalOverlap,
-                    "required_overlap" to routeDecision.requiredOverlap,
                 )
                 EdgeTutorPerf.log(
                     "prompt_sanitization",
@@ -366,21 +336,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     "final_context_chars" to contextSelection.finalContextChars,
                     "prompt_chars" to sanitizedPrompt.value.length,
                     "estimated_prompt_tokens" to estimatePromptTokens(sanitizedPrompt.value),
-                    "query_route" to routeDecision.route.name,
+                    "query_route" to "GROUNDED",
                 )
-                if (routeDecision.route == QueryRoute.UNRELATED) {
-                    _messages.value += ChatMessage(
-                        role = Role.ASSISTANT,
-                        text = "This doesn't appear to be covered in the loaded document.",
-                    )
-                    shouldPersistThinkingDuration = true
-                    EdgeTutorPerf.log(
-                        "query_stage_timing",
-                        "doc_id" to docId,
-                        "total_answer_ms" to EdgeTutorPerf.elapsedMs(queryStartNs),
-                    )
-                    return@launch
-                }
 
                 // 4. Add a placeholder ASSISTANT message; stream tokens into it.
                 //    The first visible token is flushed immediately for perceived TTFT;
@@ -388,11 +345,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 _messages.value += ChatMessage(
                     role    = Role.ASSISTANT,
                     text    = "",
-                    sources = if (routeDecision.route == QueryRoute.GROUNDED) {
-                        contextSelection.keptChunks.map { (_, chunk) -> chunk.take(120) + "." }
-                    } else {
-                        emptyList()
-                    },
+                    sources = contextSelection.keptChunks.map { (_, chunk) -> chunk.take(120) + "." },
                 )
 
                 val tokenBuf = StringBuilder()
@@ -514,19 +467,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     // Query routing and context budgeting
     // ---------------------------------------------------------------------------
 
-    /**
-     * Returns true if the question appears to be covered by the retrieved chunks.
-     *
-     * Two conditions must both pass:
-     *  1. At least one chunk has cosine similarity >= [MIN_COSINE_SIM] (equivalent
-     *     to L2 distance <= 1.4 on normalized vectors: cos = 1 - dist²/2).
-     *  2. The question shares >= [MIN_LEXICAL_OVERLAP] content words with at least
-     *     one chunk (stopwords excluded).
-     */
+    /** Select the highest-scoring retrieved chunks within the prompt budget. */
     private fun selectContext(results: List<Pair<FlatIndex.Entry, Float>>): ContextSelection {
         val sortedResults = results.sortedByDescending { (_, sim) -> sim }
         val keptCandidates = sortedResults
-            .filter { (_, sim) -> sim >= MIN_COSINE_SIM }
             .take(MAX_KEPT_CONTEXT_CHUNKS)
 
         val keptEntries = keptCandidates.mapIndexed { index, (entry, _) ->
@@ -535,8 +479,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val keptIds = keptCandidates.map { (entry, _) -> entry.id }.toSet()
         val keptScores = keptCandidates.map { (_, sim) -> sim }
         val droppedScores = sortedResults
-            .filterIndexed { index, (entry, sim) ->
-                sim < MIN_COSINE_SIM || index >= MAX_KEPT_CONTEXT_CHUNKS || entry.id !in keptIds
+            .filterIndexed { index, (entry, _) ->
+                index >= MAX_KEPT_CONTEXT_CHUNKS || entry.id !in keptIds
             }
             .map { (_, sim) -> sim }
 
@@ -549,78 +493,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             contextCharCap = MAX_CONTEXT_CHARS_PER_CHUNK,
             finalContextChars = keptEntries.sumOf { (_, chunk) -> chunk.length },
         )
-    }
-
-    private fun routeQuery(question: String, contextSelection: ContextSelection): RouteDecision {
-        if (contextSelection.maxSimilarity < MIN_COSINE_SIM) {
-            return weakDocumentRoute(
-                question = question,
-                reason = "similarity_failure",
-                lexicalOverlap = 0,
-                requiredOverlap = MIN_LEXICAL_OVERLAP,
-            )
-        }
-
-        val overlap = lexicalOverlap(question, contextSelection.keptChunks.map { (_, chunk) -> chunk })
-        if (
-            overlap.bestOverlap >= overlap.requiredOverlap ||
-            contextSelection.maxSimilarity >= STRONG_SEMANTIC_MATCH_SIM
-        ) {
-            return RouteDecision(
-                route = QueryRoute.GROUNDED,
-                reason = if (overlap.bestOverlap >= overlap.requiredOverlap) {
-                    "grounded"
-                } else {
-                    "strong_semantic_match"
-                },
-                lexicalOverlap = overlap.bestOverlap,
-                requiredOverlap = overlap.requiredOverlap,
-            )
-        }
-
-        return weakDocumentRoute(
-            question = question,
-            reason = "lexical_overlap_failure",
-            lexicalOverlap = overlap.bestOverlap,
-            requiredOverlap = overlap.requiredOverlap,
-        )
-    }
-
-    private fun weakDocumentRoute(
-        question: String,
-        reason: String,
-        lexicalOverlap: Int,
-        requiredOverlap: Int,
-    ): RouteDecision {
-        val academicFallback = isAcademicQuestion(question)
-        return RouteDecision(
-            route = if (academicFallback) QueryRoute.GENERAL_REASONING else QueryRoute.UNRELATED,
-            reason = if (academicFallback) "academic_fallback_after_$reason" else "unrelated_refusal_after_$reason",
-            lexicalOverlap = lexicalOverlap,
-            requiredOverlap = requiredOverlap,
-        )
-    }
-
-    private fun lexicalOverlap(question: String, chunks: List<String>): LexicalOverlapResult {
-        val qTokens = normalizedTokens(question)
-        val required = when {
-            qTokens.size >= 4 -> 2
-            else -> minOf(MIN_LEXICAL_OVERLAP, maxOf(1, qTokens.size))
-        }
-        val bestOverlap = chunks.maxOfOrNull { chunk ->
-            val chunkTokens = normalizedTokens(chunk)
-            qTokens.count { it in chunkTokens }
-        } ?: 0
-        return LexicalOverlapResult(
-            bestOverlap = bestOverlap,
-            requiredOverlap = required,
-        )
-    }
-
-    private fun isAcademicQuestion(question: String): Boolean {
-        val tokens = normalizedTokens(question)
-        if (tokens.any { it in ACADEMIC_TERMS }) return true
-        return question.contains("?") && tokens.any { it.length >= 5 && it in ACADEMIC_TERMS }
     }
 
     private fun buildRetrievalQuestion(question: String, priorMessages: List<ChatMessage>): String {
@@ -700,17 +572,6 @@ ${answerInstruction(wantsWorkedExample)}
 Question: $question
 """.trimIndent()
 
-    private fun buildGeneralReasoningPrompt(
-        conversationContext: String,
-        question: String,
-        wantsWorkedExample: Boolean,
-    ): String = """
-The loaded document did not provide strong support. Answer as a concise tutor.
-$conversationContext
-${answerInstruction(wantsWorkedExample)}
-Question: $question
-""".trimIndent()
-
     private fun answerInstruction(wantsWorkedExample: Boolean): String =
         if (wantsWorkedExample) {
             "Give a small worked example. Show the derivative, integrate it back, and check the result. Do not reply with only a constant or equation."
@@ -726,8 +587,6 @@ Question: $question
     private fun formatScores(scores: List<Float>): String =
         scores.joinToString(",") { "%.4f".format(it) }
 
-    private enum class QueryRoute { GROUNDED, GENERAL_REASONING, UNRELATED }
-
     private data class ContextSelection(
         val retrievedCount: Int,
         val keptChunks: List<Pair<FlatIndex.Entry, String>>,
@@ -736,18 +595,6 @@ Question: $question
         val maxSimilarity: Float,
         val contextCharCap: Int,
         val finalContextChars: Int,
-    )
-
-    private data class RouteDecision(
-        val route: QueryRoute,
-        val reason: String,
-        val lexicalOverlap: Int,
-        val requiredOverlap: Int,
-    )
-
-    private data class LexicalOverlapResult(
-        val bestOverlap: Int,
-        val requiredOverlap: Int,
     )
 
     override fun onCleared() {

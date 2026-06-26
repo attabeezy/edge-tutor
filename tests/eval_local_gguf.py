@@ -4,7 +4,7 @@ Evaluate local GGUF models directly with llama-cpp-python.
 This benchmark is aimed at the downloaded Hugging Face GGUF files under ./models
 and uses the same EdgeTutor-style workload:
   - answer covered questions from retrieved passages
-  - refuse out-of-scope questions
+  - answer out-of-document questions from the best retrieved passages
   - handle a short follow-up coherently
 
 Requirements:
@@ -40,8 +40,6 @@ except ImportError as exc:  # pragma: no cover - runtime dependency guard
 
 INDEX_DIR = "data/index"
 TOP_K = 3
-MAX_RELEVANT_DISTANCE = 1.4
-MIN_LEXICAL_OVERLAP = 2
 SYSTEM_PROMPT = "Be concise."
 
 DEFAULT_MODEL_PATHS = [
@@ -50,13 +48,6 @@ DEFAULT_MODEL_PATHS = [
     "models/lfm2.5-350m/LFM2.5-350M-Q4_K_M.gguf",
     "models/lfm2-350m-math/LFM2-350M-Math-Q4_K_M.gguf",
 ]
-
-_STOPWORDS = frozenset(
-    "a an the is are was were be been being have has had do does did "
-    "will would could should may might shall can i you he she it we they "
-    "what how why when where who which this that these those of in on at "
-    "to for with by from about into than or and but if not no so".split()
-)
 
 _CONTINUATION = re.compile(
     r"^(continue|go on|keep going|more|next|and\??|ok|okay|yes|sure|please)\.?$",
@@ -96,16 +87,6 @@ def contains_any(text: str, keywords: list[str]) -> bool:
 
 def is_refusal(text: str) -> bool:
     return normalize(text) == "not covered in this document."
-
-
-def has_lexical_overlap(question: str, chunks: list[str]) -> bool:
-    q_tokens = {w for w in re.findall(r"[a-z]+", question.lower()) if w not in _STOPWORDS}
-    required = min(MIN_LEXICAL_OVERLAP, max(1, len(q_tokens)))
-    for chunk in chunks:
-        chunk_tokens = set(re.findall(r"[a-z]+", chunk.lower()))
-        if len(q_tokens & chunk_tokens) >= required:
-            return True
-    return False
 
 
 def is_followup(text: str) -> bool:
@@ -170,13 +151,7 @@ def run_turn(
         history.append((question, answer))
         return answer, history, time.perf_counter() - started
 
-    chunks, min_dist = retrieve_chunks(question, doc_name, embed_model=embed_model)
-    out_of_scope = min_dist > MAX_RELEVANT_DISTANCE or not has_lexical_overlap(question, chunks)
-    if out_of_scope:
-        answer = "Not covered in this document."
-        history.append((question, answer))
-        return answer, history, time.perf_counter() - started
-
+    chunks, _min_dist = retrieve_chunks(question, doc_name, embed_model=embed_model)
     prompt = build_context_prompt(question, chunks)
     answer = generate(llm, prompt, max_tokens=220, temperature=0.2)
     history.append((question, answer))
@@ -206,7 +181,7 @@ def evaluate_model(model_path: Path, doc_name: str, embed_model: str, n_ctx: int
     for question in OUT_OF_SCOPE_CASES:
         answer, _history, latency = run_turn(llm, question, doc_name, embed_model=embed_model)
         latencies.append(latency)
-        passed = is_refusal(answer)
+        passed = not is_refusal(answer)
         oos_results.append({"question": question, "passed": passed, "latency_s": latency, "answer": answer})
 
     for case in FOLLOWUP_CASES:
@@ -264,7 +239,7 @@ def format_report(doc_name: str, embed_model: str, results: list[dict]) -> str:
         "",
         "## Summary",
         "",
-        "| Model | Score | Covered | OOS refusal | Follow-up | Avg latency (s) | Max latency (s) |",
+        "| Model | Score | Covered | OOS answered | Follow-up | Avg latency (s) | Max latency (s) |",
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
 

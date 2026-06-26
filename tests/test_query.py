@@ -6,47 +6,8 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.rag.query import _has_lexical_overlap, _is_followup, _build_prompt
-
-# ---------------------------------------------------------------------------
-# _has_lexical_overlap
-# ---------------------------------------------------------------------------
-
-def test_lexical_overlap_match():
-    chunks = ["The derivative measures the rate of change of a function."]
-    assert _has_lexical_overlap("what is a derivative", chunks)
-
-
-def test_lexical_overlap_no_match():
-    chunks = ["The derivative measures the rate of change of a function."]
-    assert not _has_lexical_overlap("stochastic differential equations", chunks)
-
-
-def test_lexical_overlap_stopwords_only_do_not_count():
-    # All stopwords — should not satisfy MIN_LEXICAL_OVERLAP=2
-    chunks = ["The sky is blue."]
-    assert not _has_lexical_overlap("what is the", chunks)
-
-
-def test_lexical_overlap_matches_second_chunk():
-    chunks = [
-        "Integration is the reverse of differentiation.",
-        "Limits describe the behaviour of functions near a point.",
-    ]
-    # "limits" is a content word that appears in the second chunk (1 match, required=1 since
-    # "how" and "do" are stopwords leaving only "limits" as a content word after removal)
-    assert _has_lexical_overlap("what are limits", chunks)
-
-
-def test_lexical_overlap_single_content_word_fails_threshold():
-    # "calculus" matches but only 1 content word — below MIN_LEXICAL_OVERLAP=2
-    chunks = ["calculus is hard"]
-    assert not _has_lexical_overlap("calculus stochastic equations", chunks)
-
-
-def test_lexical_overlap_two_content_words_passes():
-    chunks = ["calculus studies limits and derivatives"]
-    assert _has_lexical_overlap("calculus limits", chunks)
+from src.rag import query
+from src.rag.query import _is_followup, _build_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -110,3 +71,25 @@ def test_build_prompt_passages_separated():
     prompt = _build_prompt("q", ["first", "second"])
     # Passages must be separated by the divider
     assert "---" in prompt
+
+
+# ---------------------------------------------------------------------------
+# ask
+# ---------------------------------------------------------------------------
+
+def test_ask_always_uses_retrieved_chunks(monkeypatch):
+    def fake_retrieve_chunks(question, doc_name, top_k=query.TOP_K, embed_model=query.DEFAULT_EMBED_MODEL, verbose=False):
+        return ["A retrieved chunk with no lexical overlap."], 99.0
+
+    def fake_chat(model, messages, stream, options):
+        assert "A retrieved chunk with no lexical overlap." in messages[-1]["content"]
+        assert "Question: totally unrelated prompt" in messages[-1]["content"]
+        yield {"message": {"content": "answer"}}
+
+    monkeypatch.setattr(query, "retrieve_chunks", fake_retrieve_chunks)
+    monkeypatch.setattr(query.ollama, "chat", fake_chat)
+
+    response, history = query.ask("totally unrelated prompt", "Doc", stream=False)
+
+    assert response == "answer"
+    assert history[-1] == {"role": "assistant", "content": "answer"}
