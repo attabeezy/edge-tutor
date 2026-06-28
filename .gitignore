@@ -101,6 +101,14 @@ android-ltk/local.properties
 android-ltk/.idea/
 notebooks/
 
+# Local device/UI captures. Curated product images must use a descriptive name
+# outside these adb/test capture patterns.
+/edgetutor_mnn_*.png
+/edgetutor_picker*.png
+/android-mnn/edgetutor-*.png
+/android-mnn/validation_*.png
+/edgetutor-device-test.txt
+
 # Python/Linting
 .ruff_cache/
 

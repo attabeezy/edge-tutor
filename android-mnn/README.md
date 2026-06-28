@@ -91,8 +91,11 @@ visual.mnn.weight    (~60 MB, vision weights — unused for text-only RAG)
 ```
 
 > **Thinking mode:** Qwen3.5-0.8B defaults to `enable_thinking=true`.
-> `MnnEngine` overrides this to `false` via the config merge so the model
-> gives direct RAG answers without `<think>...</think>` preambles.
+> EdgeTutor does not expose that mode for this model package: hidden reasoning
+> can consume the complete 600-token native budget without producing a visible
+> answer. `MnnEngine` forces `false` at initialization and before every query,
+> reads the effective merged native config back, and fails generation if the
+> override is not present. `ThinkingTagFilter` remains as defense in depth.
 
 ### 3. ONNX embedding assets (same as android-ltk)
 
@@ -139,8 +142,51 @@ cd android-mnn
 ## Logcat filter
 
 ```bash
-adb logcat EdgeTutorPerf:D MnnEngine:D AndroidRuntime:E *:S
+adb logcat EdgeTutorPerf:D MnnEngine:D EdgeTutorJNI:D AndroidRuntime:E *:S
 ```
+
+For query validation, confirm each run contains `llm_thinking_config`,
+`query_route`, `prompt_metrics`, `llm_decode_first_token`,
+`llm_decode_total`, and either `query_complete` or `query_failed`.
+
+## Debug device validation
+
+After importing a model and loading a document, debug builds expose:
+
+- **benchmark prompts** — runs the four real-RAG prompt policies (`2x800`,
+  `2x500`, `1x800`, and `1x500`) against four grounded questions, three times
+  each.
+- **validate queries** — runs the fixed 16-case grounded, follow-up,
+  unsupported-academic, and non-academic suite.
+
+Start either suite over ADB without adding controls to the production UI:
+
+```powershell
+& $adb shell am start -a com.edgetutor.mnn.action.RUN_VALIDATION `
+  -n com.edgetutor.mnn/.MainActivity --activity-single-top
+```
+
+Reports are written to the app-specific external files directory:
+
+```
+Android/data/com.edgetutor.mnn/files/reports/
+```
+
+Pull them with:
+
+```powershell
+& $adb pull /sdcard/Android/data/com.edgetutor.mnn/files/reports/ reports/android-mnn/
+```
+
+The CSV contains native prefill/decode timing, visible TTFT, total time, memory,
+answers, sources, selected query route, maximum cosine similarity, the routing
+threshold, and blank 0-2 rubric columns for manual review.
+
+Automatic routing uses the highest Arctic Embed XS cosine similarity. New
+questions at or above `0.35` use textbook passages; lower-scoring questions use
+general generation. Follow-ups inherit the preceding answer's route. The
+threshold is an initial conservative value and must be calibrated from device
+reports across multiple textbooks before release.
 
 ---
 

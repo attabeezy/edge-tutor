@@ -7,13 +7,14 @@ An offline RAG (Retrieval-Augmented Generation) tutoring assistant for Android. 
 - **100% Offline** — Runs entirely on-device with zero network dependency
 - **PDF/TXT Ingestion** — Upload textbooks, get AI-powered answers
 - **Lightweight Models** — Optimized for ~1 GB free RAM Android devices
-- **Qwen2.5 0.5B Instruct** — Quantized SLM for on-device inference via llama.cpp
+- **Qwen3.5 0.8B** — Quantized SLM for on-device inference via MNN-LLM
 
 ## Project Structure
 
 ```
 edge-tutor/
-├── android-ltk/              # Android app using Llamatik/llama.cpp
+├── android-mnn/              # Primary Android app using Qwen3.5 and MNN-LLM
+├── android-ltk/              # Historical Llamatik/llama.cpp reference app
 │   ├── app/src/main/java/com/edgetutor/
 │   │   ├── data/db/          # Room database entities, DAO, converters
 │   │   ├── ingestion/        # PDF extraction, chunking, tokenization, embedding
@@ -56,7 +57,7 @@ python -m src.rag.repl MyBook -m qwen2.5:0.5b
 
 ### Android App
 
-See `android-ltk/README.md` for build instructions.
+See `android-mnn/README.md` for build and model-import instructions.
 
 ## Requirements
 

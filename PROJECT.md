@@ -1,10 +1,10 @@
 # EdgeTutor Project Status
 
-**Last reviewed:** June 26, 2026  
-**Repository state reviewed:** `master` at `8988cb2` (`Remove document relevance filter`)  
-**Primary product:** Offline Android RAG tutor for textbook question answering  
-**Current Android app:** `android-ltk/`  
-**Current default chat model:** `qwen2.5-0.5b-instruct-q4_k_m.gguf`
+**Last reviewed:** June 27, 2026
+**Repository state reviewed:** `master` at `8fad200` (`Validate Android MNN harness`)
+**Primary product:** Offline Android RAG tutor for textbook question answering
+**Current Android app:** `android-mnn/`
+**Current default chat model:** Qwen3.5-0.8B-MNN
 
 This document is the current project ground truth. It should describe what the
 code actually does, what has been validated, and what remains pending. Do not
@@ -44,7 +44,7 @@ Key product constraints:
 - Runs fully offline after model/document assets are present.
 - Accepts local PDF documents.
 - Extracts, chunks, embeds, indexes, and searches textbook text on device.
-- Answers with a small on-device GGUF model through Llamatik.
+- Answers with Qwen3.5 through the on-device MNN-LLM runtime.
 - Optimizes for low memory and low time to first visible token.
 
 ---
@@ -53,7 +53,7 @@ Key product constraints:
 
 ### Android Runtime
 
-The Android implementation in `android-ltk/` is the active product surface.
+The Android implementation in `android-mnn/` is the active product surface.
 
 Current stack:
 
@@ -63,18 +63,14 @@ Current stack:
 - ONNX Runtime Mobile for the embedding model.
 - Snowflake Arctic Embed XS exported as `arctic.onnx` for embeddings.
 - Custom Kotlin `FlatIndex` for persisted vector storage and in-memory cosine search.
-- Llamatik `com.llamatik:library-android:1.7.0` for GGUF generation.
-- Qwen2.5 0.5B Instruct Q4_K_M as the current packaged/default chat model.
+- MNN-LLM through the app JNI bridge for generation.
+- Qwen3.5 0.8B MNN as the selected chat model.
 
 Important Android paths:
 
-- `android-ltk/app/src/main/java/com/edgetutor/MainActivity.kt`
-- `android-ltk/app/src/main/java/com/edgetutor/viewmodel/IngestViewModel.kt`
-- `android-ltk/app/src/main/java/com/edgetutor/viewmodel/ChatViewModel.kt`
-- `android-ltk/app/src/main/java/com/edgetutor/ingestion/Embedder.kt`
-- `android-ltk/app/src/main/java/com/edgetutor/store/FlatIndex.kt`
-- `android-ltk/app/src/main/java/com/edgetutor/llm/LlamaEngine.kt`
-- `android-ltk/app/src/main/java/com/edgetutor/llm/PromptSanitizer.kt`
+- `android-mnn/app/src/main/java/com/edgetutor/mnn/MainActivity.kt`
+- `android-mnn/app/src/main/java/com/edgetutor/mnn/viewmodel/ChatViewModel.kt`
+- `android-mnn/app/src/main/java/com/edgetutor/mnn/llm/MnnEngine.kt`
 
 ### Python Prototype
 
@@ -93,10 +89,10 @@ Current Python stack:
 The Python and Android retrieval/routing paths are similar but not identical.
 Android is the source of truth for shipped behavior.
 
-### Android MNN Harness
+### Android MNN Runtime
 
-`android-mnn/` is the active MNN engineering harness for evaluating whether the
-app should move from the Llamatik/GGUF runtime toward an MNN-LLM runtime.
+`android-mnn/` is the selected runtime and remains the engineering surface for
+prompt, latency, memory, and answer-quality validation.
 
 Current harness direction:
 
@@ -130,27 +126,28 @@ Current MNN harness implementation notes:
 - Native streaming now buffers UTF-8 boundaries before sending chunks to Kotlin.
 - Native decode uses stepped generation so first-token and total-decode timing
   can be measured from the app.
-- `ThinkingTagFilter` strips model thinking tags from streamed UI output.
+- Qwen thinking is forced off and verified from the effective native config
+  before generation. `ThinkingTagFilter` remains as defense in depth, and
+  hidden-only output is treated as an explicit generation failure.
 - The app no longer requests all-files/shared-storage permissions for model
   setup.
 
-The MNN harness is not yet declared as the default product app. It is the
-current runtime-validation branch for deciding whether MNN should become the
-main Android runtime.
+The Qwen3.5/MNN path is the selected product runtime. `android-ltk/` remains a
+historical/reference implementation and is no longer a release gate.
 
 ---
 
 ## 3. Required Local Assets
 
-The Android app requires model assets in:
-
-`android-ltk/app/src/main/assets/`
+The Android app requires embedding assets under
+`android-mnn/app/src/main/assets/` and an imported MNN model directory under
+app-owned storage.
 
 Current expected files:
 
 | File | Purpose | Git status |
 |---|---|---|
-| `qwen2.5-0.5b-instruct-q4_k_m.gguf` | Chat model | Ignored |
+| Qwen3.5 MNN model directory | Chat model | Ignored/imported |
 | `arctic.onnx` | Embedding model | Ignored |
 | `vocab.txt` | WordPiece tokenizer vocab | Ignored |
 
@@ -210,7 +207,7 @@ Current query path:
 Current retrieval and prompt-budget constants:
 
 - Candidate retrieval count: `5`
-- Maximum kept context chunks: `2`
+- Maximum kept context chunks: `1`
 - Maximum context chars per kept chunk: `800`
 - Follow-up context chars: `180`
 - Previous answer context chars: `250`
@@ -229,29 +226,24 @@ Current behavior:
 
 ### LLM Runtime
 
-Implemented in `LlamaEngine.kt`.
+Implemented in `MnnEngine.kt` and `edgetutor_jni.cpp`.
 
 Current behavior:
 
-- Model asset: `qwen2.5-0.5b-instruct-q4_k_m.gguf`.
-- The model is copied from Android assets to internal storage if needed.
+- Model: Qwen3.5-0.8B-MNN with thinking disabled.
+- The model is imported into app-owned storage and validated before chat unlocks.
 - Native model initialization is started early from `ChatViewModel.init`.
 - Generation is serialized with an app-level mutex.
 - Prompts use a Qwen-style chat wrapper:
   `<|im_start|>system`, `<|im_start|>user`, `<|im_start|>assistant`.
 - System prompt is: `Be concise. ASCII only.`
-- Prompt text is sanitized before entering Llamatik.
+- Prompt text is sanitized before entering MNN.
 - Streamed deltas are sanitized before being used by Kotlin/UI code.
 - Stop sequences are detected in the streamed text.
 - Responses are capped at `3,000` characters.
 
-Current Llamatik session-reset ground truth:
-
-- The code does **not** call `LlamaBridge.sessionReset()`.
-- Generation isolation currently relies on serialized generation, prompt
-  construction, stop handling, and sanitization.
-- Any future session reset change must be implemented in code and device-tested
-  before this document describes it as active behavior.
+MNN generation uses `keepHistory=false`; multi-turn context is constructed
+explicitly by the Kotlin prompt path.
 
 ### Performance Instrumentation
 
@@ -285,7 +277,7 @@ Important ingestion events:
 Useful Logcat filter:
 
 ```bash
-adb logcat EdgeTutorPerf:D LlamaEngine:D AndroidRuntime:E *:S
+adb logcat EdgeTutorPerf:D MnnEngine:D EdgeTutorJNI:D AndroidRuntime:E *:S
 ```
 
 ---
@@ -297,12 +289,12 @@ adb logcat EdgeTutorPerf:D LlamaEngine:D AndroidRuntime:E *:S
 Last local check in this workspace:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe -m pytest tests -q
 ```
 
 Result:
 
-- `19 passed`
+- `14 passed`
 
 Notes:
 
@@ -314,14 +306,14 @@ Notes:
 Android unit test command:
 
 ```powershell
-cd android-ltk
+cd android-mnn
 .\gradlew.bat testDebugUnitTest
 ```
 
 Result:
 
 - `BUILD SUCCESSFUL`
-- `26 actionable tasks: 1 executed, 25 up-to-date`
+- `BUILD SUCCESSFUL` on June 27, 2026.
 
 Notes:
 
@@ -331,18 +323,12 @@ Notes:
 
 Device validation remains the main open gate.
 
-Previously documented measurements indicate that prompt-budgeting reduced
-visible TTFT from roughly 105-118 seconds with large prompts to roughly
-24-27 seconds with the balanced prompt policy. Treat those as historical
-measurement notes, not a release guarantee for the current Qwen default until
-they are repeated on target hardware.
-
 Current required device validation:
 
-- Build and install the current Android app with Qwen2.5 assets.
-- Run repeated grounded, out-of-document academic, non-academic, and follow-up
-  queries.
-- Confirm no Llamatik JNI UTF-8 aborts.
+- Run the debug prompt-policy matrix and score answer quality.
+- Run the fixed 16-case grounded, follow-up, unsupported-academic, and
+  non-academic suite.
+- Confirm no MNN/JNI UTF-8 failures.
 - Confirm no context bleed across turns.
 - Confirm first visible token timing with current prompt policy and model.
 - Confirm memory behavior during ingestion and generation.
@@ -428,18 +414,28 @@ MNN harness validation conclusion:
   pass focuses on prompt/prefill reduction, smaller or better-fit MNN model
   packages, and an explicit waiting/thinking UI for the first-token gap.
 
+Prompt-policy benchmark on June 27, 2026:
+
+- `1x800` was selected as the production policy.
+- All 12 `1x800` runs produced visible answers.
+- Visible TTFT ranged from about `16.5s` to `19.5s`, with an `18.6s` median.
+- `1x500` was faster but showed weaker grounding and false unsupported-answer
+  behavior.
+- Both two-chunk policies had blank/no-visible-answer runs and were rejected.
+
 ---
 
 ## 6. Known Issues and Risks
 
 ### Device TTFT Is Not Fully Revalidated
 
-The app has instrumentation and prompt-budgeting, but current device-level
-performance for the Qwen2.5 default still needs repeated measurement.
+The app has instrumentation and prompt-budgeting, but the four-policy matrix
+still needs to be measured on the target device.
 
 Target:
 
-- Visible time to first token below 30 seconds on Samsung SM-A047F-class hardware.
+- Median warm visible time to first token below 20 seconds on Samsung
+  SM-A047F-class hardware.
 
 ### MNN Harness Prefill Latency
 
@@ -454,11 +450,11 @@ prefill dominated the grounded-query latency:
 
 This means the next MNN work should not focus on vector search or PDF ingestion
 first. The highest-leverage work is smaller prompts, stricter context budgets,
-model/package selection, and better first-token waiting UX.
+prompt-budget selection and better first-token waiting UX.
 
 ### Small-Model Answer Quality Needs Sampling
 
-Qwen2.5 0.5B is the current default, but grounded tutoring quality still needs
+Qwen3.5 0.8B is selected, but grounded tutoring quality still needs
 manual and scripted sampling across subjects.
 
 Important scenarios:
@@ -469,20 +465,11 @@ Important scenarios:
 - Out-of-document academic questions.
 - Non-academic questions that still use retrieved context.
 
-### Llamatik JNI UTF-8 Safety
+### MNN Context Isolation
 
-The app sanitizes prompts before native generation and sanitizes streamed deltas
-before UI use. This reduces app-side UTF-8 risk.
-
-If native code aborts before `onDelta`, the fix is outside current app-side
-sanitization and requires a Llamatik upgrade, fork, or runtime change.
-
-### No Active Llamatik Session Reset
-
-The current code does not reset the native Llamatik session between generations.
-This avoids relying on an API path that is not currently implemented in the app,
-but it leaves context/session behavior as something that must be tested on
-device through repeated consecutive queries.
+Native generation uses `keepHistory=false`, while follow-up context is added
+explicitly to the prompt. Consecutive device runs must still confirm that
+independent validation cases do not inherit prior context.
 
 ### Fresh Clone Requires Local Assets
 
@@ -593,24 +580,19 @@ Implemented:
 
 Pending:
 
-- Repeat chunk cap comparisons on target hardware.
-- Repeat kept-chunk count comparisons on target hardware.
+- Run the fixed 16-query validation suite with the selected `1x800` policy.
 - Validate answer quality under smaller prompt budgets.
 
 ### Phase 7: Llamatik Runtime Tuning
 
-Status: Pending.
+Status: Closed without further work.
 
-Potential work:
-
-- Re-evaluate available Llamatik generation/runtime settings.
-- Measure any runtime changes on device before adopting them.
-- Do not record a runtime change as implemented until code and device logs
-  confirm it.
+The project selected Qwen3.5 with MNN. Llamatik revalidation is no longer on the
+critical path.
 
 ### Phase 7B: MNN Runtime Harness
 
-Status: In validation.
+Status: Selected runtime; optimization and validation continue.
 
 Implemented:
 
@@ -625,9 +607,7 @@ Implemented:
 
 Current direction:
 
-- Keep `android-mnn/` as the runtime engineering harness.
-- Do not switch the default product app from `android-ltk/` to `android-mnn/`
-  until repeated query quality, latency, memory, and UX validation justify it.
+- Treat `android-mnn/` as the primary product app.
 - Prioritize prefill reduction before broader UI/product expansion in the MNN
   harness.
 
@@ -636,29 +616,17 @@ Pending:
 - Run repeated warm and cold grounded queries.
 - Compare smaller prompt budgets and kept-chunk counts on device.
 - Test follow-up, out-of-document academic, and non-academic query behavior.
-- Test at least one smaller or more text-focused MNN package.
 - Add UX affordances for the first-token wait window.
 
 ### Phase 8: Model Selection
 
-Status: In progress.
+Status: Complete.
 
-Current default:
+Selected model:
 
-- `qwen2.5-0.5b-instruct-q4_k_m.gguf`
+- Qwen3.5-0.8B-MNN with thinking disabled.
 
-Known local swap candidates documented in `android-ltk/README.md`:
-
-- `LFM2.5-350M-Q4_K_M.gguf`
-- `LFM2-350M-Math-Q4_K_M.gguf`
-- `granite-4.0-h-350m-Q4_K_M.gguf`
-- `Qwen_Qwen3-0.6B-Q4_K_M.gguf`
-- `Qwen3-0.6B-Q8_0.gguf`
-
-Selection rule:
-
-- Prefer the smallest model that provides useful grounded tutoring behavior,
-  stable refusal behavior, acceptable memory use, and target TTFT on device.
+Alternative model comparison and Llamatik revalidation are closed.
 
 ### Phase 9: Python and GGUF Benchmark Cleanup
 
@@ -744,19 +712,20 @@ $env:EDGE_TUTOR_LLM_MODEL = "qwen2.5:0.5b"
 
 ### Android
 
-Open `android-ltk/` in Android Studio, or run Gradle from the command line.
+Open `android-mnn/` in Android Studio, or run Gradle from the command line.
 
 Required before running:
 
-1. Ensure `arctic.onnx`, `vocab.txt`, and the selected `.gguf` are in
-   `android-ltk/app/src/main/assets/`.
-2. Build/install the Android app.
-3. Measure on a physical target device for meaningful performance results.
+1. Ensure `arctic.onnx` and `vocab.txt` are in
+   `android-mnn/app/src/main/assets/`.
+2. Import the complete Qwen3.5 MNN model folder through the app.
+3. Build/install the Android app.
+4. Measure on a physical target device for meaningful performance results.
 
 Command-line unit tests:
 
 ```powershell
-cd android-ltk
+cd android-mnn
 .\gradlew.bat testDebugUnitTest
 ```
 
@@ -784,18 +753,10 @@ pwsh -File scripts/check_repo_hygiene.ps1
 
 ## 10. Immediate Next Steps
 
-1. For `android-mnn/`, repeat grounded query measurements with smaller prompt
-   budgets and stricter context caps.
-2. For `android-mnn/`, run follow-up, out-of-document academic, and
-   non-academic query samples against the loaded textbook.
-3. For `android-mnn/`, test at least one smaller or more text-focused MNN model
-   package and compare native prefill, first token, total answer, memory, and
-   answer quality.
-4. For `android-mnn/`, improve the first-token waiting UX because the validated
-   first visible token is currently about `26.9s` on target hardware.
-5. For `android-ltk/`, repeat Android device measurements with the current
-   Qwen2.5 GGUF default before making release claims.
-6. Check for context bleed across consecutive turns in both Android runtimes.
-7. Decide whether Qwen2.5 GGUF remains the default after device-quality sampling.
-8. Clean up benchmark scripts so Python/Ollama and Android measurements are not
+1. Run and manually score the fixed 16-query device validation suite using the
+   selected `1x800` policy.
+2. Improve the first-token waiting UX for the remaining roughly `18.6s` median
+   warm first-token delay.
+3. Check for context bleed across consecutive turns in the MNN runtime.
+4. Clean up benchmark scripts so Python/Ollama and Android measurements are not
    confused.
