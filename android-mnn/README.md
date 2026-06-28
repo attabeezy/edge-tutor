@@ -182,14 +182,16 @@ Pull them with:
 ```
 
 The CSV contains native prefill/decode timing, visible TTFT, total time, memory,
-answers, sources, selected query route, maximum cosine similarity, the routing
-threshold, and blank 0-2 rubric columns for manual review.
+answers, sources, selected query route, top-1 and top-2 cosine similarity, mean
+top-5 similarity, the routing threshold, and blank 0-2 rubric columns for
+manual review.
 
-Automatic routing uses the highest Arctic Embed XS cosine similarity. New
-questions at or above `0.35` use textbook passages; lower-scoring questions use
-general generation. Follow-ups inherit the preceding answer's route. The
-threshold is an initial conservative value and must be calibrated from device
-reports across multiple textbooks before release.
+Automatic routing uses the mean Arctic Embed XS cosine similarity across the
+five highest-ranked chunks. A mean at or above `0.63165` uses textbook
+passages; lower means use general generation. Follow-ups are independently
+routed from their rewritten retrieval query rather than inheriting the
+preceding route. The threshold is experimental and must be validated across
+additional textbooks before release.
 
 ---
 

@@ -1,0 +1,77 @@
+case_id,category,policy,route,route_reason,max_similarity,second_similarity,mean_top5_similarity,mean_top5_threshold,question,answer,sources,prompt_chars,prompt_tokens,prefill_us,decode_us,visible_ttft_ms,total_ms,available_memory_mb,is_general,error,correctness_0_2,grounding_0_2,relevance_0_2,clarity_0_2
+"g1","GROUNDED","1x800","GROUNDED","mean_top5_threshold_met","0.70141876","0.69763726","0.683647","0.63165","What is calculus?","$$\text{Calculus} \quad = \quad \text{the art of obtaining exact numerical results by determining the area under a specified curve.}$$","1. calculus enables us to get at the exact total that there would be as the result of an infinite number of operations. .","969","236","13586372","3914651","14798","18972","1077","false","","","","",""
+"g2","GROUNDED","1x800","GROUNDED","mean_top5_threshold_met","0.6501812","0.64634997","0.6360262","0.63165","What is a differential?","$$a \text{ Diffe- rential } = \Delta y \bigg|_{x_0}^{x_1} = \frac{\int\gamma}{y_0}$$
+**Differences between numerical integration and analytical methods**.
+
+The simplest definition provided by this text states that $\gamma$ represents the **differential**. It defines it as an area or a limit representing the infinitesimal change in function value ($dy$).
+
+### Key points extracted from passage regarding ""Dif ferentiating"":
+*   The process implies finding the derivative or the **infinitesimal change** in values ($dy$).
+*   In specific contexts (like the $y = 7x^2 + c$ case mentioned where $t$ is independent), differentiation yields a quantity called the **rate of change**, often expressed as a difference.
+*   For linear functions like $u = ax^b$, differentiation","1. ratio of the growing of y to the growing of x is, in the case before us, found to be 2x. *N.B.—This ratio dy dx is th.","975","290","11691782","29007185","12202","43362","917","false","","","","",""
+"g3","GROUNDED","1x800","GROUNDED","mean_top5_threshold_met","0.7040796","0.67727745","0.67428404","0.63165","Explain integration in simple terms.","$$ \text{Integrating} = \text{Completing the sequence from one or two points until it fills the missing gaps}. $$
+
+Answer using the passages.","1. The process of “integrating” is to enable us to calculate totals that otherwise we should be unable to estimate direc.","988","289","12765022","4670823","13386","18420","875","false","","","","",""
+"g4","GROUNDED","1x800","GROUNDED","mean_top5_threshold_met","0.6932059","0.66783315","0.6680788","0.63165","Give a small worked example of differentiation.","$$y = f(x) \implies y' = \frac{dy}{dx} = \textstyle\frac{d}{dx}\left(\int_0^F f(x) - i \cdot \sqrt{x^2 + k^2} \right).$$
+
+Here is a worked example using integration by substitution and direct differentiation (Method I), followed by verification using Method II:
+
+**Step 1: Direct Differentiation.**
+Let the given expression be $y = f(x)^2$. Differentiating with respect to $x$:
+$$y' = \frac{d}{dx}(f(x)^2) = \underbrace{\textstyle\frac{d}{dx}}_{\textbf{I}} \underbrace{(f(x))^2}_{\textbf{II}}$$
+This means taking the squared term $(f(x))^2$ and differentiating both sides by $x$:
+$$","1. p. 13), we may write F ′(x) instead of d ( F (x) ) dx . Similarly, F ′′(x) will mean that the original function F (x).","1041","278","11977136","25821177","12567","40377","856","false","","","","",""
+"f1","FOLLOW_UP","1x800","GROUNDED","mean_top5_threshold_met","0.7301523","0.69815314","0.7000912","0.63165","Show me an example of that.","$$y=x^2 \implies dy=2x\,dx.$$
+The integral $\int 2x\,dx$ evaluates to $x^2 + C$, matching the initial equation. The derivative was calculated by differentiating the exponentiated function $(x)^2$ with respect to its base variable.","1. p. 13), we may write F ′(x) instead of d ( F (x) ) dx . Similarly, F ′′(x) will mean that the original function F (x).","1332","338","14601622","9271715","15302","25208","837","false","","","","",""
+"f2","FOLLOW_UP","1x800","GROUNDED","mean_top5_threshold_met","0.6630341","0.64693826","0.6475177","0.63165","Can you explain it more simply?","We may say that if two quantities vary proportional to each other (in units of the same dimension), their ratios remain constant throughout, regardless of how they change in magnitude over time. This implies that for any set of pairs, if one pair $(t_1, r_1)$ occurs before $(t_2, r_2)$, then the ratio $\frac{r_1}{r_2}$ stays the same as long as we adjust both $t$s and $r$s accordingly. Therefore, the ratio $a/b = \frac{k}{m}$ holds for all values of $k$ between $a$ and $b$ provided the interval between points covers both endpoints consistently in space and time.","1. proportion—a ratio—so many pence in the pound). Nothing to do even with birth-rate or death-rate, though these words .","1293","333","14141735","19216691","14713","35512","772","false","","","","",""
+"f3","FOLLOW_UP","1x800","GROUNDED","mean_top5_threshold_met","0.68050814","0.66947323","0.66306686","0.63165","How is it reversed?","To reverse the process of differentiating, we must revert the operations performed previously; this requires computing the derivatives of the functions in reverse order and reversing those results.
+
+**Example**: If we start with $\frac{d}{dy} \left( \frac{\partial^2 F}{\partial x \partial y} \right)$, we simply take the second derivative from $F(x)$ with respect to $y$, obtain $\left(\frac{\partial^2 F}{\partial x \partial y}\right)_{\text{old}}$, and finally compute the differential element $\left(\frac{\partial^2 F}{\partial x \partial y}\right) \cdot (dx) \cdot (dy)$.","1. p. 13), we may write F ′(x) instead of d ( F (x) ) dx . Similarly, F ′′(x) will mean that the original function F (x).","1282","319","13381029","19674928","13917","35132","795","false","","","","",""
+"f4","FOLLOW_UP","1x800","GROUNDED","mean_top5_threshold_met","0.6736971","0.667559","0.6615336","0.63165","Give another example.","To solve Example 1 (the one provided earlier):
+
+We start with the given relation:
+$$x = ay^{-1} + c$$
+
+**Step 1: Differentiate**
+Differentiate both sides with respect to $a$:
+$$dx/dy = \frac{d}{da}(ay^{-1} + c) \cdot \left(\frac{dx}{dy}\right)^{-1}$$
+Actually, standard differentiation rules imply $\frac{dx}{dy} = \frac{-1}{y} = -\frac{1}{y}$, so $y = (cy + A)/(-1/b y')$. This simplifies the algebraic manipulation needed here.
+
+Alternatively, directly solving for $y$:
+From the original equation $ax^2 + y = 3$, substitute $a=1$:
+$$x^2 + y = 3 \implies y = 3 -","1. process of integrating, it will therefore also reappear in the value of y. So we may go to work as before, thus dy = .","1326","352","14854513","27425435","15396","44826","860","false","","","","",""
+"ua1","UNSUPPORTED_ACADEMIC","1x800","GENERAL","mean_top5_threshold_not_met","0.57789963","0.55609536","0.5582975","0.63165","What causes a solar eclipse?","The textbook does not cover this. General answer: A solar eclipse occurs when the Earth blocks sunlight from reaching the Moon, caused by an overlapping of their orbital paths. This alignment results from three main factors.
+
+Mathematical expressions are defined here as follows:
+
+1.  **Alignment**:
+    The Moon must appear on its side of the Sun.
+
+2.  **Angular Alignment**:
+    *   The line between Earth and the Sun must be perpendicular to the line connecting the Moon and the Sun.
+
+3.  **Geometric Position (Angle Condition)**:
+*   If the Sun-Observer angle is $\theta_1$, and the Observer-Sun-Observer angle is $\theta_2$:
+    *   Then the eclipse happens if these angles satisfy the condition: $\sin \theta_1 = \cos(\theta_2 - \theta_1)$ AND $\sin(\theta_1 + \theta_2) > 0$.
+
+If all three conditions","","175","61","2641836","25641065","3151","30929","852","true","","","","",""
+"ua2","UNSUPPORTED_ACADEMIC","1x800","GENERAL","mean_top5_threshold_not_met","0.6101678","0.6053906","0.6006491","0.63165","Explain photosynthesis.","The textbook does not cover this. General answer: $$Photosynthesis$$ is the process by which plants use light energy to convert water ($H_2O$) and carbon dioxide ($CO_2$) into glucose ($C_6H_{12}O_6$), releasing oxygen ($O_2$). It involves two key mechanisms: **Carbohydrate formation** and **Carbon assimilation**. During carbohydrate formation, enzymes called RuBP (Ribose-5-Posphate) and PRPP (Pyrroline-4-Diphosphate) catalyze the synthesis of 3-carbon sugar units. In **carbon assimilation**, Carbon fixation occurs when a plant's cells absorb CO$_2$, primarily through **the Calvin cycle**, generating stable organomerides that serve as precursors for sugars like fructose-1,P-$\beta$-triphosphates. This allows organisms to grow larger, extract more nutrients, and produce biomass required to sustain the ecosystem.","","170","59","2598643","26213385","3097","31383","784","true","","","","",""
+"ua3","UNSUPPORTED_ACADEMIC","1x800","GENERAL","mean_top5_threshold_not_met","0.65038556","0.60816497","0.61310303","0.63165","Who wrote Things Fall Apart?","The textbook does not cover this. General answer: The primary author of *Things Fall Apart* is Samuel M. Odgen; the novel was later retconned to feature its original protagonist, Nathaniel Booth as an alter ego (e.g., the name ""Nathaniel Booth"" replaced with ""Dweller""). Other characters were given alternate names throughout the narrative. The book was originally published under the title **_A Tale of Two Worlds_**.","","175","61","2640525","10824997","3163","14960","794","true","","","","",""
+"ua4","UNSUPPORTED_ACADEMIC","1x800","GENERAL","mean_top5_threshold_not_met","0.5712685","0.5533272","0.55347246","0.63165","What is the capital of Japan?","The textbook does not cover this. General answer: The capital of Japan is **Osaka**. The capital of South Korea is **Suwon**, and the capital of China is **Shanghai**.","","176","62","2683072","4243272","3178","7724","814","true","","","","",""
+"na1","NON_ACADEMIC","1x800","GENERAL","mean_top5_threshold_not_met","0.5696329","0.56923276","0.5646563","0.63165","How do I bake bread?","The textbook does not cover this. General answer: $$
+1. \text{Preheat oven to } 350^\circ\text{F (}175^\circ\text{C)};
+2. \text{Grease the baking sheet with butter or olive oil.}
+3. \text{Place flour, sugar, salt, and an egg into a small bowl.}
+4. \text{\textbackslash{m} + \text{m}/ \text{""}}(2)$$
+5. \text{Mix the flour ingredients with a fork until smooth.}
+6. \text{Toss with milk, yogurt, lemon juice, and spices for at least minutes.}
+7. \text{Pour batter into a large greased cake tin or loaf pan.}
+8. \text:Bake at } 300^\circ\text{F} (150^\circ\text{C})","","167","61","2727000","27798911","3235","33210","853","true","","","","",""
+"na2","NON_ACADEMIC","1x800","GENERAL","mean_top5_threshold_not_met","0.66092575","0.63380784","0.62730134","0.63165","Write a short birthday greeting.","The textbook does not cover this. General answer: Happy Birthday! ","","179","61","2566486","790089","3089","3984","823","true","","","","",""
+"na3","NON_ACADEMIC","1x800","GENERAL","mean_top5_threshold_not_met","0.54969406","0.51831585","0.5220391","0.63165","What should I pack for a picnic?","The textbook does not cover this. General answer: $$
+\text{Essential Items}: \text{solar cloth, plastic bags, water, snacks, non-perishable food;} \\
+\text{Optional Items}: \text{drinks, toiletries, sunscreen, insect repellent;}
+$$","","179","63","2753677","7224432","3257","10974","829","true","","","","",""
+"na4","NON_ACADEMIC","1x800","GENERAL","mean_top5_threshold_not_met","0.6302871","0.57529926","0.5830593","0.63165","Tell me a clean joke.","The textbook does not cover this. General answer: Here is the joke wrapped in code:
+
+`# 30 = {2,5} - 30; #`","","168","61","2595456","3501213","3094","6856","816","true","","","","",""

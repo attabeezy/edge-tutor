@@ -65,6 +65,8 @@ data class QueryExecutionResult(
     val route: QueryRoute,
     val routeReason: String,
     val maxSimilarity: Float,
+    val secondSimilarity: Float,
+    val meanTop5Similarity: Float,
 )
 
 enum class Role { USER, ASSISTANT }
@@ -373,15 +375,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val sanitizedQuestion = PromptSanitizer.sanitize(effectiveQuestion)
                 val rawContextText    = contextSelection.keptChunks.joinToString("\n\n") { (_, chunk) -> chunk }
                 val sanitizedContext  = PromptSanitizer.sanitize(rawContextText)
-                val isFollowUp = isFollowUpQuestion(effectiveQuestion)
-                val previousAnswerWasGrounded = priorMessages
-                    .lastOrNull { it.role == Role.ASSISTANT }
-                    ?.sources
-                    ?.isNotEmpty()
-                val routeDecision = QueryRoutingPolicy.inheritFollowUp(
-                    isFollowUp = isFollowUp,
-                    previousAnswerWasGrounded = previousAnswerWasGrounded,
-                    maxSimilarity = contextSelection.keptScores.firstOrNull(),
+                val routeDecision = QueryRoutingPolicy.decide(
+                    contextSelection.keptScores + contextSelection.droppedScores,
                 )
                 activeRouteDecision = routeDecision
                 val isDocumentSupported = routeDecision.route == QueryRoute.GROUNDED
@@ -404,7 +399,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     "query_route"  to routeDecision.route.name,
                     "route_reason" to routeDecision.reason,
                     "max_sim"      to contextSelection.maxSimilarity,
-                    "route_threshold" to QueryRoutingPolicy.MIN_GROUNDED_COSINE_SIMILARITY,
+                    "second_sim" to routeDecision.secondSimilarity,
+                    "mean_top5_sim" to routeDecision.meanTop5Similarity,
+                    "mean_top5_threshold" to QueryRoutingPolicy.MIN_MEAN_TOP5_SIMILARITY,
                 )
                 EdgeTutorPerf.log(
                     "prompt_metrics",
@@ -421,7 +418,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     "estimated_prompt_tokens"   to estimatePromptTokens(sanitizedPrompt.value),
                     "query_route"               to routeDecision.route.name,
                     "route_reason"              to routeDecision.reason,
-                    "route_threshold"           to QueryRoutingPolicy.MIN_GROUNDED_COSINE_SIMILARITY,
+                    "second_sim"                to routeDecision.secondSimilarity,
+                    "mean_top5_sim"             to routeDecision.meanTop5Similarity,
+                    "mean_top5_threshold"       to QueryRoutingPolicy.MIN_MEAN_TOP5_SIMILARITY,
                 )
 
                 // 4. Add placeholder ASSISTANT message; stream tokens into it.
@@ -496,12 +495,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         val immediateChunk = synchronized(tokenBuf) {
                             if (!firstTokenFlushed && token.isNotBlank()) {
                                 firstTokenFlushed = true
-                                val prefix = if (isDocumentSupported) {
-                                    ""
-                                } else {
-                                    AnswerAttributionPolicy.GENERAL_ANSWER_PREFIX + " "
-                                }
-                                val chunk = prefix + tokenBuf.toString() + token
+                                val chunk = tokenBuf.toString() + token
                                 tokenBuf.clear()
                                 chunk
                             } else {
@@ -547,6 +541,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         route = routeDecision.route,
                         routeReason = routeDecision.reason,
                         maxSimilarity = routeDecision.maxSimilarity,
+                        secondSimilarity = routeDecision.secondSimilarity,
+                        meanTop5Similarity = routeDecision.meanTop5Similarity,
                     )
                     EdgeTutorPerf.log(
                         "query_complete",
@@ -554,6 +550,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         "query_route" to routeDecision.route.name,
                         "route_reason" to routeDecision.reason,
                         "max_sim" to routeDecision.maxSimilarity,
+                        "second_sim" to routeDecision.secondSimilarity,
+                        "mean_top5_sim" to routeDecision.meanTop5Similarity,
+                        "mean_top5_threshold" to QueryRoutingPolicy.MIN_MEAN_TOP5_SIMILARITY,
                         "ui_visible_ttft_ms" to uiVisibleTtftMs,
                         "total_answer_ms" to EdgeTutorPerf.elapsedMs(queryStartNs),
                         "prompt_tokens" to generation.metrics.promptTokens,
@@ -673,6 +672,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         route = query.route,
                         routeReason = query.routeReason,
                         maxSimilarity = query.maxSimilarity,
+                        secondSimilarity = query.secondSimilarity,
+                        meanTop5Similarity = query.meanTop5Similarity,
                     )
                     _validationStatus.value = "running ${index + 1}/${EdgeTutorValidationSuite.cases.size}"
                     EdgeTutorPerf.log(
@@ -741,6 +742,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 route = query.route,
                                 routeReason = query.routeReason,
                                 maxSimilarity = query.maxSimilarity,
+                                secondSimilarity = query.secondSimilarity,
+                                meanTop5Similarity = query.meanTop5Similarity,
                             )
                             completed++
                             _validationStatus.value = "running benchmark $completed/$total"

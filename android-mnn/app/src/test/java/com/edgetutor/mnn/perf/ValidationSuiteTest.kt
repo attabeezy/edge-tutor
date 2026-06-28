@@ -33,7 +33,9 @@ class ValidationSuiteTest {
         val csv = listOf(result).toCsv()
         assertTrue(csv.contains("correctness_0_2"))
         assertTrue(csv.contains("max_similarity"))
-        assertTrue(csv.contains("route_threshold"))
+        assertTrue(csv.contains("second_similarity"))
+        assertTrue(csv.contains("mean_top5_similarity"))
+        assertTrue(csv.contains("mean_top5_threshold"))
         assertTrue(csv.contains("\"1x500\""))
         assertTrue(csv.contains("\"100\""))
     }

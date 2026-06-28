@@ -1,0 +1,42 @@
+case_id,category,policy,route,route_reason,max_similarity,route_threshold,support_score,support_threshold,support_classifier_ms,question,answer,sources,prompt_chars,prompt_tokens,prefill_us,decode_us,visible_ttft_ms,total_ms,available_memory_mb,is_general,error,correctness_0_2,grounding_0_2,relevance_0_2,clarity_0_2
+"g1","GROUNDED","1x800","GENERAL","support_classifier_rejected","0.70141876","0.35","0.30295175","0.5","95","What is calculus?","The textbook does not cover this. General answer: $$
+\text{Calculus is the branch of mathematics concerned with continuous variable analysis, particularly differential integration and finite difference approximation.}
+$$","","164","59","3638026","6799264","5066","12142","756","true","","","","",""
+"g2","GROUNDED","1x800","GENERAL","support_classifier_rejected","0.6501812","0.35","4.333486E-4","0.5","113","What is a differential?","The textbook does not cover this. General answer: $$D = dx \, dy - y \, dz$$","","170","60","3037740","3190937","3752","7068","737","true","","","","",""
+"g3","GROUNDED","1x800","GENERAL","support_classifier_rejected","0.7040796","0.35","9.67957E-4","0.5","113","Explain integration in simple terms.","The textbook does not cover this. General answer: Integration is the process of finding the area under a curve when given an equation, similar to how we can find the area of a square using geometry. While it involves complex math techniques like calculus, the fundamental idea remains that it calculates cumulative areas based on specific conditions.","","183","61","3073364","10233512","3771","14489","710","true","","","","",""
+"g4","GROUNDED","1x800","GENERAL","support_classifier_rejected","0.6932059","0.35","4.0715928E-5","0.5","109","Give a small worked example of differentiation.","The textbook does not cover this. General answer: $$\frac{d}{dx}x^n = nx^{n-1}$$","","194","63","2720536","2908987","3362","6454","881","true","","","","",""
+"f1","FOLLOW_UP","1x800","GENERAL","support_classifier_rejected","0.7301523","0.35","1.1627803E-4","0.5","110","Show me an example of that.","The textbook does not cover this. General answer: $$x \text{ is the variable; } y \text{ is the dependent variable.} \\ x^2 - xy + 20 = y.$$","","174","62","2690102","5440438","3319","9086","819","true","","","","",""
+"f2","FOLLOW_UP","1x800","GENERAL","support_classifier_rejected","0.6630341","0.35","2.2811022E-5","0.5","95","Can you explain it more simply?","The textbook does not cover this. General answer: Yes, there are no ""explainer"" questions in the general knowledge category because none of them have an accurate answer.","","178","62","2595854","3219504","3189","6669","718","true","","","","",""
+"f3","FOLLOW_UP","1x800","GENERAL","support_classifier_rejected","0.68050814","0.35","3.9781127E-5","0.5","94","How is it reversed?","The textbook does not cover this. General answer: $$\text{Reverse of } f(x) \text{ is } g(y).$$","","166","60","2560356","2458654","3160","5769","683","true","","","","",""
+"f4","FOLLOW_UP","1x800","GENERAL","support_classifier_rejected","0.6736971","0.35","0.004910366","0.5","90","Give another example.","The textbook does not cover this. General answer: *   **Catalysts:** Provide an alternative reaction pathway.
+    *$$e^+ + e^- \to 0\text{D}^{2+}$$*
+    *(Note of Explanation: These are two-electron transfers that lower the activation energy required for a chemical reaction).*","","168","59","2561621","8304129","3150","12041","707","true","","","","",""
+"ua1","UNSUPPORTED_ACADEMIC","1x800","GENERAL","support_classifier_rejected","0.57789963","0.35","1.18841635E-5","0.5","106","What causes a solar eclipse?","The textbook does not cover this. General answer: $$\text{A celestial body passes between the Earth and the Sun, blocking direct light from the source.}$$","","175","61","2637525","4094116","3251","7595","758","true","","","","",""
+"ua2","UNSUPPORTED_ACADEMIC","1x800","GENERAL","support_classifier_rejected","0.6101678","0.35","1.49324E-5","0.5","87","Explain photosynthesis.","The textbook does not cover this. General answer: **Photosynthesis is a bioluminescence-based energy transfer process.**
+In **$$CO_2 + H_2O \rightarrow C_6H_{12}O_6 + H_2O$$**, plants absorb sunlight to convert carbon dioxide into glucose ($C_6H_{12}O_6$), which serves as food, while releasing oxygen.
+
+*   **Carbon Dioxide**: $$$CO_2$$
+*   **Glucose**: $$$C_6H_{12}O_6$$
+*   **Water**: $$$H_2O$$
+*   **Solarlight**: Sunlight","","170","59","2678126","18153949","3376","23086","781","true","","","","",""
+"ua3","UNSUPPORTED_ACADEMIC","1x800","GENERAL","support_classifier_rejected","0.65038556","0.35","7.984452E-5","0.5","91","Who wrote Things Fall Apart?","The textbook does not cover this. General answer: John Steinmetz (often rendered as John Steinemetz).","","175","61","2596804","1684539","3192","5005","783","true","","","","",""
+"ua4","UNSUPPORTED_ACADEMIC","1x800","GENERAL","support_classifier_rejected","0.5712685","0.35","1.0556026E-5","0.5","92","What is the capital of Japan?","The textbook does not cover this. General answer: **$$Tokyo$**  
+The capital city of Japan is Tokyo.","","176","62","2649418","1990531","3259","5410","766","true","","","","",""
+"na1","NON_ACADEMIC","1x800","GENERAL","support_classifier_rejected","0.5696329","0.35","1.367799E-5","0.5","87","How do I bake bread?","The textbook does not cover this. General answer: To bake bread, you need an oven (or convection oven) and a mixing paddle.
+$$1+0-1+0+1=0.$$","","167","61","2619551","4289581","3221","7854","777","true","","","","",""
+"na2","NON_ACADEMIC","1x800","GENERAL","support_classifier_rejected","0.66092575","0.35","1.1771031E-5","0.5","88","Write a short birthday greeting.","The textbook does not cover this. General answer: Here is a concise birthday greeting in code blocks:
+
+```bash
+# A simple bash script for a friendly birthday wish.
+```
+
+```ascii
+Happy Birthday! ","","179","61","2562227","5218719","3150","8874","773","true","","","","",""
+"na3","NON_ACADEMIC","1x800","GENERAL","support_classifier_rejected","0.54969406","0.35","1.0569795E-5","0.5","90","What should I pack for a picnic?","The textbook does not cover this. General answer: $\{ \text{Food}, \text{Drink} } \to \text{""I need snacks, water, and some food of my liking""},
+\{ \text{Clothing}, \text{Footwear} \to \text{""T-shirts, sandals, and comfortable footwear""} } \to \text{""A wardrobe with basics and hiking boots""} ,
+\{ \text{Items to avoid}, \text{Trash} \to \text{""Avoid non-recyclable plastics and trash""}.
+The user wants a concise list.","","179","63","2870850","15115533","3467","19833","795","true","","","","",""
+"na4","NON_ACADEMIC","1x800","GENERAL","support_classifier_rejected","0.6302871","0.35","2.0102318E-5","0.5","82","Tell me a clean joke.","The textbook does not cover this. General answer: ```text
+A cat named Meow asked, ""What's the cleanest animal on Earth?""
+Bread said, ""It is my friend, Leo.""
+```","","168","61","2820282","4628136","3426","8414","818","true","","","","",""
