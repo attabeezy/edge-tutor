@@ -6,6 +6,9 @@ object MnnThinkingPolicy {
     const val disabledConfigJson =
         """{"jinja":{"context":{"enable_thinking":false}}}"""
 
+    const val enabledConfigJson =
+        """{"jinja":{"context":{"enable_thinking":true}}}"""
+
     fun isDisabled(effectiveConfigJson: String): Boolean =
         runCatching {
             !JsonParser.parseString(effectiveConfigJson)

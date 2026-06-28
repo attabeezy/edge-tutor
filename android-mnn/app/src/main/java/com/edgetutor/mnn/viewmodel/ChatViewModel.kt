@@ -8,7 +8,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.edgetutor.mnn.data.db.DocumentEntity
 import com.edgetutor.mnn.data.db.AppDatabase
+import com.edgetutor.mnn.data.db.ChatSessionEntity
 import com.edgetutor.mnn.data.db.MessageEntity
+import com.edgetutor.mnn.data.db.SessionListItem
 import com.edgetutor.mnn.ingestion.Embedder
 import com.edgetutor.mnn.llm.LlmEngine
 import com.edgetutor.mnn.llm.MnnEngine
@@ -130,6 +132,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _isWarmingUp = MutableStateFlow(false)
     val isWarmingUp: StateFlow<Boolean> = _isWarmingUp
 
+    /** User-controlled Thinking pill: when on, the model emits a <think> block. */
+    private val _thinkingEnabled = MutableStateFlow(false)
+    val thinkingEnabled: StateFlow<Boolean> = _thinkingEnabled.asStateFlow()
+
+    fun setThinkingEnabled(enabled: Boolean) { _thinkingEnabled.value = enabled }
+    fun toggleThinking() { _thinkingEnabled.value = !_thinkingEnabled.value }
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage
 
@@ -138,6 +147,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _activeDocumentId = MutableStateFlow<Long?>(null)
     val activeDocumentId: StateFlow<Long?> = _activeDocumentId.asStateFlow()
+
+    private val _activeSessionId = MutableStateFlow<Long?>(null)
+    val activeSessionId: StateFlow<Long?> = _activeSessionId.asStateFlow()
+
+    /** All chat sessions across textbooks, newest first — backs the history drawer. */
+    val sessions: StateFlow<List<SessionListItem>> =
+        db.chatSessionDao().observeAll()
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _validationStatus = MutableStateFlow<String?>(null)
     val validationStatus: StateFlow<String?> = _validationStatus.asStateFlow()
@@ -198,51 +215,111 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadDocument(doc: DocumentEntity) {
         viewModelScope.launch(Dispatchers.IO) {
-            _isWarmingUp.value = true
-            _thinkingUiState.value = ThinkingUiState.Idle
-            try {
-                val file = File(getApplication<Application>().filesDir, "${doc.id}.idx")
-                if (!file.exists()) { _isWarmingUp.value = false; return@launch }
-                val app = getApplication<Application>()
-                val idx = EdgeTutorPerf.trace("index_load", "doc_id" to doc.id) {
-                    FlatIndex().also { it.load(file) }
-                }
-                index = idx
-                activeDoc = doc
-                _activeDocumentId.value = doc.id
-                _isLikelyScanned.value = doc.isLikelyScanned
-                _messages.value = db.messageDao().getForDocument(doc.id).map(::toChatMessage)
+            if (!loadIndexFor(doc)) return@launch
+            val session = db.chatSessionDao().latestForDocument(doc.id) ?: createSessionFor(doc.id)
+            _activeSessionId.value = session.id
+            _messages.value = db.messageDao().getForSession(session.id).map(::toChatMessage)
+        }
+    }
 
-                embedderCloseJob?.cancel()
-                embedderCloseJob = null
-                embedder?.close()
-                embedder = null
-
-                EdgeTutorPerf.snapshot(app, "embed_warmup_before", "doc_id" to doc.id)
-                EdgeTutorPerf.snapshot(app, "llm_warmup_before",   "doc_id" to doc.id)
-
-                coroutineScope {
-                    val embJob = async {
-                        EdgeTutorPerf.trace("embed_warmup", "doc_id" to doc.id) {
-                            Embedder(app).also { it.warmUp() }
-                        }
-                    }
-                    val llmJob = async {
-                        EdgeTutorPerf.traceSuspend("llm_warmup", "doc_id" to doc.id) {
-                            llm.warmUp()
-                        }
-                    }
-                    embedder = embJob.await()
-                    llmJob.await()
-                }
-
-                EdgeTutorPerf.snapshot(app, "embed_warmup_after", "doc_id" to doc.id)
-                EdgeTutorPerf.snapshot(app, "llm_warmup_after",   "doc_id" to doc.id)
-                _isWarmingUp.value = false
-            } catch (e: Exception) {
-                _isWarmingUp.value = false
-                _errorMessage.value = "Failed to load model: ${e.message}"
+    /** Loads a document's FAISS index and warms the embedder + LLM. */
+    private suspend fun loadIndexFor(doc: DocumentEntity): Boolean {
+        _isWarmingUp.value = true
+        _thinkingUiState.value = ThinkingUiState.Idle
+        return try {
+            val app = getApplication<Application>()
+            val file = File(app.filesDir, "${doc.id}.idx")
+            if (!file.exists()) { _isWarmingUp.value = false; return false }
+            val idx = EdgeTutorPerf.trace("index_load", "doc_id" to doc.id) {
+                FlatIndex().also { it.load(file) }
             }
+            index = idx
+            activeDoc = doc
+            _activeDocumentId.value = doc.id
+            _isLikelyScanned.value = doc.isLikelyScanned
+
+            embedderCloseJob?.cancel()
+            embedderCloseJob = null
+            embedder?.close()
+            embedder = null
+
+            EdgeTutorPerf.snapshot(app, "embed_warmup_before", "doc_id" to doc.id)
+            EdgeTutorPerf.snapshot(app, "llm_warmup_before",   "doc_id" to doc.id)
+
+            coroutineScope {
+                val embJob = async {
+                    EdgeTutorPerf.trace("embed_warmup", "doc_id" to doc.id) {
+                        Embedder(app).also { it.warmUp() }
+                    }
+                }
+                val llmJob = async {
+                    EdgeTutorPerf.traceSuspend("llm_warmup", "doc_id" to doc.id) {
+                        llm.warmUp()
+                    }
+                }
+                embedder = embJob.await()
+                llmJob.await()
+            }
+
+            EdgeTutorPerf.snapshot(app, "embed_warmup_after", "doc_id" to doc.id)
+            EdgeTutorPerf.snapshot(app, "llm_warmup_after",   "doc_id" to doc.id)
+            _isWarmingUp.value = false
+            true
+        } catch (e: Exception) {
+            _isWarmingUp.value = false
+            _errorMessage.value = "Failed to load model: ${e.message}"
+            false
+        }
+    }
+
+    private suspend fun createSessionFor(documentId: Long): ChatSessionEntity {
+        val now = System.currentTimeMillis()
+        val entity = ChatSessionEntity(documentId = documentId, createdAt = now, updatedAt = now)
+        return entity.copy(id = db.chatSessionDao().insert(entity))
+    }
+
+    /** Starts a fresh chat on the current textbook. */
+    fun newSession() {
+        val doc = activeDoc ?: return
+        if (_isGenerating.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            mnnEngine.reset()
+            val session = createSessionFor(doc.id)
+            _activeSessionId.value = session.id
+            _messages.value = emptyList()
+            _thinkingUiState.value = ThinkingUiState.Idle
+        }
+    }
+
+    /** Opens an existing chat from history, switching textbook index if needed. */
+    fun openSession(item: SessionListItem) {
+        if (_isGenerating.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            if (activeDoc?.id != item.documentId) {
+                val doc = db.documentDao().getById(item.documentId) ?: return@launch
+                if (!loadIndexFor(doc)) return@launch
+            }
+            mnnEngine.reset()
+            _activeSessionId.value = item.id
+            _messages.value = db.messageDao().getForSession(item.id).map(::toChatMessage)
+            _thinkingUiState.value = ThinkingUiState.Idle
+        }
+    }
+
+    fun deleteSession(item: SessionListItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.chatSessionDao().delete(item.id)
+            if (_activeSessionId.value != item.id) return@launch
+            mnnEngine.reset()
+            val doc = activeDoc
+            if (doc == null) {
+                _activeSessionId.value = null
+                _messages.value = emptyList()
+                return@launch
+            }
+            val next = db.chatSessionDao().latestForDocument(doc.id) ?: createSessionFor(doc.id)
+            _activeSessionId.value = next.id
+            _messages.value = db.messageDao().getForSession(next.id).map(::toChatMessage)
         }
     }
 
@@ -309,23 +386,36 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val thinkingStartMs = SystemClock.elapsedRealtime()
             val queryStartNs    = System.nanoTime()
             val docId           = activeDoc?.id ?: -1L
+            val thinkingEnabled = _thinkingEnabled.value
             var shouldPersistThinkingDuration = false
             var activeRouteDecision: QueryRouteDecision? = null
             _thinkingUiState.value = ThinkingUiState.Active
             val priorMessages = _messages.value
+            val sessionId = _activeSessionId.value
+                ?: createSessionFor(docId).also { _activeSessionId.value = it.id }.id
             lastQueryResult = null
             val user = ChatMessage(Role.USER, effectiveQuestion, imagePath = imagePath)
             _messages.value += user
             val userId = db.messageDao().insert(
                 MessageEntity(
                     documentId = docId,
+                    sessionId = sessionId,
                     role = Role.USER.name,
                     text = effectiveQuestion,
                     imagePath = imagePath,
-                    thinkingEnabled = false,
+                    thinkingEnabled = thinkingEnabled,
                 )
             )
             _messages.value = _messages.value.dropLast(1) + user.copy(id = userId)
+            // First message names the session; later ones just bump its recency.
+            if (priorMessages.isEmpty()) {
+                val title = effectiveQuestion.trim().replace(Regex("\\s+"), " ").take(60)
+                db.chatSessionDao().updateMeta(
+                    sessionId, title.ifBlank { "New chat" }, System.currentTimeMillis(),
+                )
+            } else {
+                db.chatSessionDao().touch(sessionId, System.currentTimeMillis())
+            }
             try {
                 val app = getApplication<Application>()
                 val retrievalQuestion = buildRetrievalQuestion(effectiveQuestion, priorMessages)
@@ -436,11 +526,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val assistantId = db.messageDao().insert(
                     MessageEntity(
                         documentId = docId,
+                        sessionId = sessionId,
                         role = Role.ASSISTANT.name,
                         text = "",
                         sourcesJson = gson.toJson(_messages.value.last().sources),
                         completionState = "streaming",
-                        thinkingEnabled = false,
+                        thinkingEnabled = thinkingEnabled,
                     )
                 )
                 _messages.value = _messages.value.dropLast(1) + _messages.value.last().copy(id = assistantId)
@@ -487,7 +578,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 try {
-                    mnnEngine.enforceThinkingDisabled()
+                    mnnEngine.setThinkingEnabled(thinkingEnabled)
                     val inferencePrompt = if (imagePath != null) {
                         "${sanitizedPrompt.value}\n<img>$imagePath</img>"
                     } else sanitizedPrompt.value
@@ -565,12 +656,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         MessageEntity(
                             id = assistantId,
                             documentId = docId,
+                            sessionId = sessionId,
                             role = Role.ASSISTANT.name,
                             text = completed.text,
                             thinking = completed.thinking,
                             sourcesJson = gson.toJson(completed.sources),
                             completionState = "complete",
-                            thinkingEnabled = false,
+                            thinkingEnabled = thinkingEnabled,
                             promptTokens = generation.metrics.promptTokens,
                             answerTokens = generation.metrics.decodeTokens,
                             prefillUs = generation.metrics.prefillUs,

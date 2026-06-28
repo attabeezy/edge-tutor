@@ -6,13 +6,19 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
+import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.core.view.GravityCompat
 import androidx.core.view.isVisible
+import com.edgetutor.mnn.data.db.SessionListItem
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -32,8 +38,11 @@ class MainActivity : AppCompatActivity() {
     private val ingestVm: IngestViewModel by viewModels()
     private val chatVm: ChatViewModel by viewModels()
     private lateinit var adapter: ChatAdapter
+    private lateinit var sessionAdapter: SessionAdapter
     private lateinit var attachmentStore: ImageAttachmentStore
     private var pendingCameraFile: File? = null
+    private var modelReady = false
+    private var generating = false
 
     private val documentPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@registerForActivityResult
@@ -58,14 +67,52 @@ class MainActivity : AppCompatActivity() {
         PdfExtractor.init(this)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        setSupportActionBar(binding.toolbar)
+        supportActionBar?.setDisplayShowTitleEnabled(false)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        supportActionBar?.setHomeAsUpIndicator(R.drawable.ic_menu)
         attachmentStore = ImageAttachmentStore(this)
         adapter = ChatAdapter()
         binding.chatList.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
         binding.chatList.adapter = adapter
         binding.chatList.itemAnimator = null
+        setupHistoryDrawer()
         bindActions()
         collectState()
         handleDebugIntent(intent)
+    }
+
+    private fun setupHistoryDrawer() {
+        sessionAdapter = SessionAdapter(
+            onOpen = {
+                chatVm.openSession(it)
+                binding.drawerLayout.closeDrawer(GravityCompat.START)
+            },
+            onDelete = ::confirmDeleteSession,
+        )
+        binding.sessionList.layoutManager = LinearLayoutManager(this)
+        binding.sessionList.adapter = sessionAdapter
+        binding.newChat.setOnClickListener {
+            chatVm.newSession()
+            binding.drawerLayout.closeDrawer(GravityCompat.START)
+        }
+        onBackPressedDispatcher.addCallback(this) {
+            if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                binding.drawerLayout.closeDrawer(GravityCompat.START)
+            } else {
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+            }
+        }
+    }
+
+    private fun confirmDeleteSession(item: SessionListItem) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Delete chat?")
+            .setMessage("This will permanently remove \"${item.title}\".")
+            .setPositiveButton("Delete") { _, _ -> chatVm.deleteSession(item) }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -83,8 +130,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindActions() = with(binding) {
-        importModel.setOnClickListener { modelPicker.launch(null) }
-        addDocument.setOnClickListener { documentPicker.launch(arrayOf("application/pdf", "text/plain")) }
         send.setOnClickListener {
             if (chatVm.isGenerating.value) chatVm.stopGeneration()
             else {
@@ -95,10 +140,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        btPlus.setOnClickListener { layoutMoreMenu.isVisible = !layoutMoreMenu.isVisible }
+        btnToggleThinking.setOnClickListener { chatVm.toggleThinking() }
         attach.setOnClickListener {
+            layoutMoreMenu.isVisible = false
             photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         }
         cameraButton.setOnClickListener {
+            layoutMoreMenu.isVisible = false
             if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchCamera()
             else cameraPermission.launch(Manifest.permission.CAMERA)
         }
@@ -110,6 +159,26 @@ class MainActivity : AppCompatActivity() {
                 returnToBottom.isVisible = lm.findLastVisibleItemPosition() < adapter.itemCount - 2
             }
         })
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_main, menu)
+        return true
+    }
+
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        menu.findItem(R.id.action_import_model)?.isVisible = !modelReady
+        menu.findItem(R.id.action_choose_textbook)?.isEnabled = modelReady && !generating
+        return super.onPrepareOptionsMenu(menu)
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
+        android.R.id.home -> { binding.drawerLayout.openDrawer(GravityCompat.START); true }
+        R.id.action_import_model -> { modelPicker.launch(null); true }
+        R.id.action_choose_textbook -> {
+            documentPicker.launch(arrayOf("application/pdf", "text/plain")); true
+        }
+        else -> super.onOptionsItemSelected(item)
     }
 
     companion object {
@@ -124,16 +193,19 @@ class MainActivity : AppCompatActivity() {
                     combine(ingestVm.documents, ingestVm.progress, chatVm.modelReadiness) { docs, progress, model ->
                         Triple(docs.firstOrNull(), progress, model)
                     }.collect { (doc, progress, model) ->
-                        binding.importModel.isVisible = !model.isReady
-                        binding.modelStatus.text = if (model.isReady) "Model ready" else model.message ?: "Import Qwen3.5 model"
-                        binding.documentName.text = doc?.displayName ?: "No textbook selected"
-                        binding.documentStatus.text = when (doc?.status) {
-                            IngestionStatus.RUNNING -> progress[doc.id]?.let { "${it.phase} ${it.current}/${it.total}" } ?: "Indexing"
-                            IngestionStatus.DONE -> if (doc.isLikelyScanned) "Ready · scanned PDF warning" else "Ready"
-                            IngestionStatus.ERROR -> doc.errorMessage ?: "Import failed"
+                        modelReady = model.isReady
+                        binding.toolbarTitle.text = doc?.displayName ?: "EdgeTutor"
+                        binding.toolbarStatus.text = when {
+                            !model.isReady -> model.message ?: "Import Qwen3.5 model"
+                            doc == null -> "Add a PDF or text file"
+                            doc.status == IngestionStatus.RUNNING ->
+                                progress[doc.id]?.let { "${it.phase} ${it.current}/${it.total}" } ?: "Indexing"
+                            doc.status == IngestionStatus.DONE ->
+                                if (doc.isLikelyScanned) "Ready · scanned PDF warning" else "Ready"
+                            doc.status == IngestionStatus.ERROR -> doc.errorMessage ?: "Import failed"
                             else -> "Add a PDF or text file"
                         }
-                        binding.addDocument.isEnabled = model.isReady && !chatVm.isGenerating.value
+                        invalidateOptionsMenu()
                         if (doc?.status == IngestionStatus.DONE && doc.id != chatVm.activeDocumentId.value) chatVm.loadDocument(doc)
                     }
                 }
@@ -149,22 +221,34 @@ class MainActivity : AppCompatActivity() {
                     combine(chatVm.isGenerating, chatVm.isWarmingUp, chatVm.pendingImagePath) {
                             generating, warming, image -> arrayOf(generating, warming, image)
                     }.collect { state ->
-                        val generating = state[0] as Boolean
+                        val isGenerating = state[0] as Boolean
                         val warming = state[1] as Boolean
                         val image = state[2] as String?
-                        binding.send.setImageResource(if (generating) R.drawable.ic_stop else R.drawable.ic_send)
-                        binding.send.contentDescription = if (generating) "Stop generation" else "Send message"
-                        binding.prefill.isVisible = warming || (generating && adapter.currentList.lastOrNull()?.text.isNullOrBlank())
-                        binding.attach.isEnabled = !generating
-                        binding.cameraButton.isEnabled = !generating
+                        generating = isGenerating
+                        invalidateOptionsMenu()
+                        binding.send.setImageResource(if (isGenerating) R.drawable.ic_stop else R.drawable.ic_send)
+                        binding.send.contentDescription = if (isGenerating) "Stop generation" else "Send message"
+                        binding.prefill.isVisible = warming || (isGenerating && adapter.currentList.lastOrNull()?.text.isNullOrBlank())
+                        binding.attach.isEnabled = !isGenerating
+                        binding.cameraButton.isEnabled = !isGenerating
+                        binding.btnToggleThinking.isEnabled = !isGenerating
                         binding.attachmentPreview.isVisible = image != null
                         if (image != null) binding.attachmentImage.setImageURI(Uri.fromFile(File(image)))
                     }
                 }
                 launch {
+                    chatVm.thinkingEnabled.collect { binding.btnToggleThinking.isSelected = it }
+                }
+                launch {
                     chatVm.errorMessage.collect {
                         binding.error.isVisible = it != null
                         binding.error.text = it
+                    }
+                }
+                launch {
+                    chatVm.sessions.collect {
+                        sessionAdapter.submitList(it)
+                        binding.noHistory.isVisible = it.isEmpty()
                     }
                 }
             }

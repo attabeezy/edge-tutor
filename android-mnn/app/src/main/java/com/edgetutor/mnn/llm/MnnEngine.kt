@@ -247,6 +247,27 @@ class MnnEngine(private val context: Context) : LlmEngine, ChatSessionEngine {
         if (ptr != 0L) enforceThinkingDisabled(ptr)
     }
 
+    /**
+     * Applies the user's Thinking-pill choice to the live session before a query.
+     * When disabled, reuses the verified [enforceThinkingDisabled] path; when
+     * enabled, merges enable_thinking=true so Qwen emits a <think> block.
+     */
+    fun setThinkingEnabled(enabled: Boolean) {
+        val ptr = sessionPtr
+        if (ptr == 0L) return
+        if (!enabled) {
+            enforceThinkingDisabled(ptr)
+            return
+        }
+        MnnNativeBridge.updateConfig(ptr, MnnThinkingPolicy.enabledConfigJson)
+        EdgeTutorPerf.log(
+            "llm_thinking_config",
+            "enable_thinking" to true,
+            "verified" to true,
+        )
+        Log.d(TAG, "Set effective config enable_thinking=true")
+    }
+
     private fun enforceThinkingDisabled(ptr: Long) {
         MnnNativeBridge.updateConfig(ptr, SESSION_CONFIG_JSON)
         val effective = MnnNativeBridge.dumpConfig(ptr)

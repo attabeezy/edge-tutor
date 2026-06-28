@@ -14,12 +14,19 @@ import androidx.room.PrimaryKey
             childColumns = ["documentId"],
             onDelete = ForeignKey.CASCADE,
         ),
+        ForeignKey(
+            entity = ChatSessionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["sessionId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
     ],
-    indices = [Index("documentId")],
+    indices = [Index("documentId"), Index("sessionId")],
 )
 data class MessageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val documentId: Long,
+    val sessionId: Long,
     val role: String,
     val text: String,
     val thinking: String? = null,
