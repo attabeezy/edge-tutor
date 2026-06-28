@@ -1,0 +1,418 @@
+--------- beginning of main
+06-28 06:30:01.200 D/EdgeTutorPerf(12132): llm_asset_check status=hit model_dir=/data/user/0/com.edgetutor.mnn/files/mnn_model
+06-28 06:30:01.203 D/MnnEngine(12132): Initialising MNN-LLM session with model at: /data/user/0/com.edgetutor.mnn/files/mnn_model
+06-28 06:30:01.263 D/EdgeTutorJNI(12132): initSession: loading from /data/user/0/com.edgetutor.mnn/files/mnn_model/config.json
+06-28 06:30:01.284 D/EdgeTutorJNI(12132): initSession: effective config flags is_visual=1 has_deepstack=1
+06-28 06:30:01.939 D/EdgeTutorPerf(12132): index_load doc_id=5 elapsed_ms=215
+06-28 06:30:01.976 D/EdgeTutorPerf(12132): embed_warmup_before doc_id=5 avail_mem_mb=1363 total_mem_mb=3707 low_memory=false
+06-28 06:30:01.981 D/EdgeTutorPerf(12132): llm_warmup_before doc_id=5 avail_mem_mb=1361 total_mem_mb=3707 low_memory=false
+06-28 06:30:05.331 D/EdgeTutorPerf(12132): embed_warmup doc_id=5 elapsed_ms=3335
+06-28 06:30:12.666 D/EdgeTutorJNI(12132): initSession: success, ptr=0xb4000071b3843a80
+06-28 06:30:12.697 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:30:12.697 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:30:12.697 D/EdgeTutorPerf(12132): llm_native_init model_dir=mnn_model duration_ms=11493
+06-28 06:30:12.697 D/MnnEngine(12132): MNN-LLM session initialised successfully (ptr=-5476376658539431296)
+06-28 06:30:14.082 D/EdgeTutorPerf(12132): llm_decode_first_token source=warm_up llm_native_ttft_ms=1380
+06-28 06:30:14.268 D/EdgeTutorPerf(12132): llm_decode_total source=warm_up duration_ms=1566 prompt_len=29 decode_len=2 prefill_us=1338888 decode_us=184205
+06-28 06:30:14.268 D/EdgeTutorPerf(12132): llm_generation_result source=warm_up visible_answer_chars=5 hidden_thinking_chars=0 blank_visible_answer=false decode_len=2
+06-28 06:30:14.269 D/EdgeTutorPerf(12132): llm_warmup doc_id=5 elapsed_ms=12276
+06-28 06:30:14.273 D/EdgeTutorPerf(12132): embed_warmup_after doc_id=5 avail_mem_mb=907 total_mem_mb=3707 low_memory=false
+06-28 06:30:14.274 D/EdgeTutorPerf(12132): llm_warmup_after doc_id=5 avail_mem_mb=907 total_mem_mb=3707 low_memory=false
+06-28 06:30:24.133 D/EdgeTutorPerf(12132): validation_suite_start cases=16
+06-28 06:30:24.214 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=855 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:30:24.215 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=855 total_mem_mb=3707 low_memory=false
+06-28 06:30:24.576 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=360
+06-28 06:30:24.577 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=851 total_mem_mb=3707 low_memory=false
+06-28 06:30:24.577 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=360
+06-28 06:30:24.577 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=17 conversation_context_chars=0
+06-28 06:30:24.614 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=36
+06-28 06:30:24.614 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=36
+06-28 06:30:24.627 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=12
+06-28 06:30:24.628 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.70141876 route_threshold=0.35
+06-28 06:30:24.634 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.70141876 kept_sim_scores=0.7014 dropped_sim_scores=0.6976,0.6801,0.6755,0.6636 context_char_cap=800 final_context_chars=803 prompt_chars=969 estimated_prompt_tokens=243 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:30:24.680 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:30:24.680 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:30:35.549 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=10866
+06-28 06:30:35.550 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=11383 source=first_token_flush
+06-28 06:30:42.009 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=17326 prompt_len=236 decode_len=45 prefill_us=10835034 decode_us=6037314
+06-28 06:30:42.009 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=202 hidden_thinking_chars=0 blank_visible_answer=false decode_len=45
+06-28 06:30:42.014 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.70141876 ui_visible_ttft_ms=11383 total_answer_ms=17845 prompt_tokens=236 decode_tokens=45 answer_chars=202 blank_visible_answer=false
+06-28 06:30:42.027 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=17859
+06-28 06:30:42.031 D/EdgeTutorPerf(12132): validation_suite_progress completed=1 total=16 case_id=g1
+06-28 06:30:42.046 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=822 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:30:42.048 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=822 total_mem_mb=3707 low_memory=false
+06-28 06:30:42.494 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=445
+06-28 06:30:42.496 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=822 total_mem_mb=3707 low_memory=false
+06-28 06:30:42.496 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=445
+06-28 06:30:42.496 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=23 conversation_context_chars=0
+06-28 06:30:42.499 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:30:42.499 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:30:42.512 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=13
+06-28 06:30:42.513 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6501812 route_threshold=0.35
+06-28 06:30:42.515 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.6501812 kept_sim_scores=0.6502 dropped_sim_scores=0.6463,0.6342,0.6278,0.6215 context_char_cap=800 final_context_chars=803 prompt_chars=975 estimated_prompt_tokens=244 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:30:42.543 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:30:42.543 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:30:55.423 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=12878
+06-28 06:30:55.424 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=13390 source=first_token_flush
+06-28 06:31:25.018 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=42473 prompt_len=290 decode_len=207 prefill_us=12841191 decode_us=27705215
+06-28 06:31:25.018 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=851 hidden_thinking_chars=0 blank_visible_answer=false decode_len=207
+06-28 06:31:25.021 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6501812 ui_visible_ttft_ms=13390 total_answer_ms=42987 prompt_tokens=290 decode_tokens=207 answer_chars=851 blank_visible_answer=false
+06-28 06:31:25.029 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=42996
+06-28 06:31:25.031 D/EdgeTutorPerf(12132): validation_suite_progress completed=2 total=16 case_id=g2
+06-28 06:31:25.047 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=833 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:31:25.049 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=833 total_mem_mb=3707 low_memory=false
+06-28 06:31:25.488 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=438
+06-28 06:31:25.490 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=835 total_mem_mb=3707 low_memory=false
+06-28 06:31:25.491 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=439
+06-28 06:31:25.491 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=36 conversation_context_chars=0
+06-28 06:31:25.493 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:31:25.494 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:31:25.507 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=13
+06-28 06:31:25.508 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.7040796 route_threshold=0.35
+06-28 06:31:25.510 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.7040796 kept_sim_scores=0.7041 dropped_sim_scores=0.6773,0.6664,0.6634,0.6602 context_char_cap=800 final_context_chars=803 prompt_chars=988 estimated_prompt_tokens=247 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:31:25.538 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:31:25.538 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:31:38.171 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=12632
+06-28 06:31:38.172 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=13138 source=first_token_flush
+06-28 06:31:44.395 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=18855 prompt_len=289 decode_len=45 prefill_us=12591860 decode_us=5757079
+06-28 06:31:44.395 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=127 hidden_thinking_chars=0 blank_visible_answer=false decode_len=45
+06-28 06:31:44.397 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.7040796 ui_visible_ttft_ms=13138 total_answer_ms=19363 prompt_tokens=289 decode_tokens=45 answer_chars=127 blank_visible_answer=false
+06-28 06:31:44.406 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=19372
+06-28 06:31:44.408 D/EdgeTutorPerf(12132): validation_suite_progress completed=3 total=16 case_id=g3
+06-28 06:31:44.428 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=821 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:31:44.430 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=821 total_mem_mb=3707 low_memory=false
+06-28 06:31:44.869 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=438
+06-28 06:31:44.872 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=821 total_mem_mb=3707 low_memory=false
+06-28 06:31:44.872 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=439
+06-28 06:31:44.872 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=47 conversation_context_chars=0
+06-28 06:31:44.874 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:31:44.875 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:31:44.886 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=11
+06-28 06:31:44.887 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6932059 route_threshold=0.35
+06-28 06:31:44.888 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.6932059 kept_sim_scores=0.6932 dropped_sim_scores=0.6678,0.6656,0.6623,0.6514 context_char_cap=800 final_context_chars=803 prompt_chars=1041 estimated_prompt_tokens=261 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:31:44.920 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:31:44.920 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:31:56.930 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=12009
+06-28 06:31:56.931 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=12520 source=first_token_flush
+06-28 06:33:24.227 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=99305 prompt_len=278 decode_len=600 prefill_us=11970593 decode_us=81566635
+06-28 06:33:24.227 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=1990 hidden_thinking_chars=0 blank_visible_answer=false decode_len=600
+06-28 06:33:24.230 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6932059 ui_visible_ttft_ms=12520 total_answer_ms=99819 prompt_tokens=278 decode_tokens=600 answer_chars=1990 blank_visible_answer=false
+06-28 06:33:24.240 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=99829
+06-28 06:33:24.242 D/EdgeTutorPerf(12132): validation_suite_progress completed=4 total=16 case_id=g4
+06-28 06:33:24.273 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=799 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:33:24.274 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=799 total_mem_mb=3707 low_memory=false
+06-28 06:33:24.729 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=454
+06-28 06:33:24.732 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=806 total_mem_mb=3707 low_memory=false
+06-28 06:33:24.732 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=454
+06-28 06:33:24.733 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=24 conversation_context_chars=0
+06-28 06:33:24.735 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:33:24.735 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:33:24.743 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=7
+06-28 06:33:24.744 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.69915575 route_threshold=0.35
+06-28 06:33:24.745 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.69915575 kept_sim_scores=0.6992 dropped_sim_scores=0.6814,0.6743,0.6636,0.6408 context_char_cap=800 final_context_chars=803 prompt_chars=976 estimated_prompt_tokens=244 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:33:24.775 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:33:24.775 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:33:36.070 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=11293
+06-28 06:33:36.071 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=11826 source=first_token_flush
+06-28 06:34:39.356 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=74579 prompt_len=263 decode_len=413 prefill_us=11265228 decode_us=58675021
+06-28 06:34:39.356 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=1853 hidden_thinking_chars=0 blank_visible_answer=false decode_len=413
+06-28 06:34:39.364 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.69915575 ui_visible_ttft_ms=11826 total_answer_ms=75119 prompt_tokens=263 decode_tokens=413 answer_chars=1853 blank_visible_answer=false
+06-28 06:34:39.399 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=75154
+06-28 06:34:39.423 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=796 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:34:39.425 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=796 total_mem_mb=3707 low_memory=false
+06-28 06:34:39.915 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=488
+06-28 06:34:39.916 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=797 total_mem_mb=3707 low_memory=false
+06-28 06:34:39.916 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=489
+06-28 06:34:39.917 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=true retrieval_query_chars=52 conversation_context_chars=311
+06-28 06:34:39.921 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=4
+06-28 06:34:39.922 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=4
+06-28 06:34:39.931 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=8
+06-28 06:34:39.931 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=followup_inherited_grounded max_sim=0.7301523 route_threshold=0.35
+06-28 06:34:39.933 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.7301523 kept_sim_scores=0.7302 dropped_sim_scores=0.6982,0.6952,0.6915,0.6855 context_char_cap=800 final_context_chars=803 prompt_chars=1332 estimated_prompt_tokens=333 query_route=GROUNDED route_reason=followup_inherited_grounded route_threshold=0.35
+06-28 06:34:39.964 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:34:39.964 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:34:55.479 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=15512
+06-28 06:34:55.480 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=16074 source=first_token_flush
+06-28 06:35:07.161 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=27195 prompt_len=360 decode_len=84 prefill_us=15466988 decode_us=10900852
+06-28 06:35:07.162 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=259 hidden_thinking_chars=0 blank_visible_answer=false decode_len=84
+06-28 06:35:07.164 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=followup_inherited_grounded max_sim=0.7301523 ui_visible_ttft_ms=16074 total_answer_ms=27758 prompt_tokens=360 decode_tokens=84 answer_chars=259 blank_visible_answer=false
+06-28 06:35:07.174 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=27769
+06-28 06:35:07.177 D/EdgeTutorPerf(12132): validation_suite_progress completed=5 total=16 case_id=f1
+06-28 06:35:07.196 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=771 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:35:07.198 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=771 total_mem_mb=3707 low_memory=false
+06-28 06:35:07.644 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=444
+06-28 06:35:07.645 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=772 total_mem_mb=3707 low_memory=false
+06-28 06:35:07.645 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=445
+06-28 06:35:07.646 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=23 conversation_context_chars=0
+06-28 06:35:07.648 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:35:07.648 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:35:07.657 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=8
+06-28 06:35:07.657 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6402397 route_threshold=0.35
+06-28 06:35:07.659 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.6402397 kept_sim_scores=0.6402 dropped_sim_scores=0.6376,0.6224,0.6223,0.6200 context_char_cap=800 final_context_chars=803 prompt_chars=955 estimated_prompt_tokens=239 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:35:07.681 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:35:07.681 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:35:26.247 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=18565
+06-28 06:35:26.248 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=19069 source=first_token_flush
+06-28 06:36:53.216 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=105533 prompt_len=428 decode_len=600 prefill_us=18502552 decode_us=81129555
+06-28 06:36:53.216 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=1789 hidden_thinking_chars=0 blank_visible_answer=false decode_len=600
+06-28 06:36:53.221 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6402397 ui_visible_ttft_ms=19069 total_answer_ms=106041 prompt_tokens=428 decode_tokens=600 answer_chars=1789 blank_visible_answer=false
+06-28 06:36:53.251 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=106071
+06-28 06:36:53.271 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=777 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:36:53.272 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=777 total_mem_mb=3707 low_memory=false
+06-28 06:36:53.712 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=438
+06-28 06:36:53.714 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=776 total_mem_mb=3707 low_memory=false
+06-28 06:36:53.714 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=439
+06-28 06:36:53.715 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=true retrieval_query_chars=55 conversation_context_chars=310
+06-28 06:36:53.719 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=4
+06-28 06:36:53.719 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=4
+06-28 06:36:53.728 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=8
+06-28 06:36:53.728 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=followup_inherited_grounded max_sim=0.6630341 route_threshold=0.35
+06-28 06:36:53.730 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.6630341 kept_sim_scores=0.6630 dropped_sim_scores=0.6469,0.6441,0.6430,0.6405 context_char_cap=800 final_context_chars=803 prompt_chars=1293 estimated_prompt_tokens=324 query_route=GROUNDED route_reason=followup_inherited_grounded route_threshold=0.35
+06-28 06:36:53.750 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:36:53.751 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:37:08.636 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=14884
+06-28 06:37:08.637 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=15383 source=first_token_flush
+06-28 06:37:17.533 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=23781 prompt_len=350 decode_len=62 prefill_us=14801702 decode_us=8204058
+06-28 06:37:17.534 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=317 hidden_thinking_chars=0 blank_visible_answer=false decode_len=62
+06-28 06:37:17.536 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=followup_inherited_grounded max_sim=0.6630341 ui_visible_ttft_ms=15383 total_answer_ms=24281 prompt_tokens=350 decode_tokens=62 answer_chars=317 blank_visible_answer=false
+06-28 06:37:17.546 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=24292
+06-28 06:37:17.547 D/EdgeTutorPerf(12132): validation_suite_progress completed=6 total=16 case_id=f2
+06-28 06:37:17.564 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=761 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:37:17.565 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=761 total_mem_mb=3707 low_memory=false
+06-28 06:37:18.003 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=436
+06-28 06:37:18.005 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=760 total_mem_mb=3707 low_memory=false
+06-28 06:37:18.005 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=437
+06-28 06:37:18.006 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=24 conversation_context_chars=0
+06-28 06:37:18.008 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:37:18.008 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:37:18.015 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=6
+06-28 06:37:18.015 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.69915575 route_threshold=0.35
+06-28 06:37:18.017 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.69915575 kept_sim_scores=0.6992 dropped_sim_scores=0.6814,0.6743,0.6636,0.6408 context_char_cap=800 final_context_chars=803 prompt_chars=976 estimated_prompt_tokens=244 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:37:18.032 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:37:18.032 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:37:29.316 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=11282
+06-28 06:37:29.317 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=11766 source=first_token_flush
+06-28 06:37:35.635 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=17601 prompt_len=263 decode_len=46 prefill_us=11249779 decode_us=5860458
+06-28 06:37:35.636 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=123 hidden_thinking_chars=0 blank_visible_answer=false decode_len=46
+06-28 06:37:35.638 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.69915575 ui_visible_ttft_ms=11766 total_answer_ms=18087 prompt_tokens=263 decode_tokens=46 answer_chars=123 blank_visible_answer=false
+06-28 06:37:35.647 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=18096
+06-28 06:37:35.664 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=774 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:37:35.665 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=774 total_mem_mb=3707 low_memory=false
+06-28 06:37:36.100 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=433
+06-28 06:37:36.102 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=773 total_mem_mb=3707 low_memory=false
+06-28 06:37:36.102 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=434
+06-28 06:37:36.102 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=true retrieval_query_chars=44 conversation_context_chars=184
+06-28 06:37:36.105 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:37:36.105 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:37:36.112 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=7
+06-28 06:37:36.113 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=followup_inherited_grounded max_sim=0.68050814 route_threshold=0.35
+06-28 06:37:36.114 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.68050814 kept_sim_scores=0.6805 dropped_sim_scores=0.6695,0.6585,0.6544,0.6525 context_char_cap=800 final_context_chars=803 prompt_chars=1155 estimated_prompt_tokens=289 query_route=GROUNDED route_reason=followup_inherited_grounded route_threshold=0.35
+06-28 06:37:36.130 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:37:36.130 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:37:50.124 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=13993
+06-28 06:37:50.125 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=14475 source=first_token_flush
+06-28 06:38:03.796 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=27664 prompt_len=321 decode_len=99 prefill_us=13956037 decode_us=12874924
+06-28 06:38:03.796 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=361 hidden_thinking_chars=0 blank_visible_answer=false decode_len=99
+06-28 06:38:03.799 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=followup_inherited_grounded max_sim=0.68050814 ui_visible_ttft_ms=14475 total_answer_ms=28148 prompt_tokens=321 decode_tokens=99 answer_chars=361 blank_visible_answer=false
+06-28 06:38:03.808 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=28158
+06-28 06:38:03.810 D/EdgeTutorPerf(12132): validation_suite_progress completed=7 total=16 case_id=f3
+06-28 06:38:03.827 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=767 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:38:03.829 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=767 total_mem_mb=3707 low_memory=false
+06-28 06:38:04.277 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=447
+06-28 06:38:04.278 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=767 total_mem_mb=3707 low_memory=false
+06-28 06:38:04.278 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=447
+06-28 06:38:04.279 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=31 conversation_context_chars=0
+06-28 06:38:04.281 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:38:04.282 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:38:04.289 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=6
+06-28 06:38:04.289 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6652893 route_threshold=0.35
+06-28 06:38:04.291 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.6652893 kept_sim_scores=0.6653 dropped_sim_scores=0.6617,0.6544,0.6528,0.6434 context_char_cap=800 final_context_chars=803 prompt_chars=1018 estimated_prompt_tokens=255 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:38:04.307 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:38:04.307 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:38:15.917 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=11609
+06-28 06:38:15.918 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=12106 source=first_token_flush
+06-28 06:39:42.743 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=98435 prompt_len=272 decode_len=600 prefill_us=11548654 decode_us=80518876
+06-28 06:39:42.744 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=1765 hidden_thinking_chars=0 blank_visible_answer=false decode_len=600
+06-28 06:39:42.746 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6652893 ui_visible_ttft_ms=12106 total_answer_ms=98934 prompt_tokens=272 decode_tokens=600 answer_chars=1765 blank_visible_answer=false
+06-28 06:39:42.757 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=98945
+06-28 06:39:42.772 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=712 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:39:42.774 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=712 total_mem_mb=3707 low_memory=false
+06-28 06:39:43.208 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=434
+06-28 06:39:43.210 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=711 total_mem_mb=3707 low_memory=false
+06-28 06:39:43.210 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=434
+06-28 06:39:43.210 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=true retrieval_query_chars=53 conversation_context_chars=318
+06-28 06:39:43.212 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:39:43.213 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:39:43.221 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=8
+06-28 06:39:43.222 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=followup_inherited_grounded max_sim=0.6736971 route_threshold=0.35
+06-28 06:39:43.224 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.6736971 kept_sim_scores=0.6737 dropped_sim_scores=0.6676,0.6593,0.6554,0.6517 context_char_cap=800 final_context_chars=803 prompt_chars=1326 estimated_prompt_tokens=332 query_route=GROUNDED route_reason=followup_inherited_grounded route_threshold=0.35
+06-28 06:39:43.240 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:39:43.240 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:39:57.194 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=13952
+06-28 06:39:57.195 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=14434 source=first_token_flush
+06-28 06:40:32.011 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=48769 prompt_len=327 decode_len=227 prefill_us=13909056 decode_us=32340097
+06-28 06:40:32.012 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=830 hidden_thinking_chars=0 blank_visible_answer=false decode_len=227
+06-28 06:40:32.015 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=followup_inherited_grounded max_sim=0.6736971 ui_visible_ttft_ms=14434 total_answer_ms=49253 prompt_tokens=327 decode_tokens=227 answer_chars=830 blank_visible_answer=false
+06-28 06:40:32.034 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=49273
+06-28 06:40:32.036 D/EdgeTutorPerf(12132): validation_suite_progress completed=8 total=16 case_id=f4
+06-28 06:40:32.058 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=753 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:40:32.061 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=753 total_mem_mb=3707 low_memory=false
+06-28 06:40:32.513 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=451
+06-28 06:40:32.515 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=747 total_mem_mb=3707 low_memory=false
+06-28 06:40:32.515 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=452
+06-28 06:40:32.516 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=28 conversation_context_chars=0
+06-28 06:40:32.518 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:40:32.518 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:40:32.526 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=7
+06-28 06:40:32.527 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.57789963 route_threshold=0.35
+06-28 06:40:32.529 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.57789963 kept_sim_scores=0.5779 dropped_sim_scores=0.5561,0.5553,0.5524,0.5498 context_char_cap=800 final_context_chars=803 prompt_chars=976 estimated_prompt_tokens=244 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:40:32.546 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:40:32.546 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:40:44.402 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=11855
+06-28 06:40:44.403 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=12363 source=first_token_flush
+06-28 06:40:57.997 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=25449 prompt_len=241 decode_len=95 prefill_us=11717585 decode_us=12548027
+06-28 06:40:57.998 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=451 hidden_thinking_chars=0 blank_visible_answer=false decode_len=95
+06-28 06:40:58.001 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.57789963 ui_visible_ttft_ms=12363 total_answer_ms=25960 prompt_tokens=241 decode_tokens=95 answer_chars=451 blank_visible_answer=false
+06-28 06:40:58.012 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=25972
+06-28 06:40:58.014 D/EdgeTutorPerf(12132): validation_suite_progress completed=9 total=16 case_id=ua1
+06-28 06:40:58.031 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=793 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:40:58.033 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=793 total_mem_mb=3707 low_memory=false
+06-28 06:40:58.472 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=438
+06-28 06:40:58.473 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=793 total_mem_mb=3707 low_memory=false
+06-28 06:40:58.473 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=438
+06-28 06:40:58.474 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=23 conversation_context_chars=0
+06-28 06:40:58.476 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:40:58.476 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:40:58.485 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=8
+06-28 06:40:58.485 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6101678 route_threshold=0.35
+06-28 06:40:58.487 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.6101678 kept_sim_scores=0.6102 dropped_sim_scores=0.6054,0.5964,0.5958,0.5955 context_char_cap=800 final_context_chars=803 prompt_chars=975 estimated_prompt_tokens=244 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:40:58.502 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:40:58.502 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:41:09.952 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=11449
+06-28 06:41:09.953 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=11937 source=first_token_flush
+06-28 06:41:29.266 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=30762 prompt_len=271 decode_len=136 prefill_us=11378755 decode_us=17742220
+06-28 06:41:29.266 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=669 hidden_thinking_chars=0 blank_visible_answer=false decode_len=136
+06-28 06:41:29.268 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6101678 ui_visible_ttft_ms=11937 total_answer_ms=31252 prompt_tokens=271 decode_tokens=136 answer_chars=669 blank_visible_answer=false
+06-28 06:41:29.282 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=31265
+06-28 06:41:29.284 D/EdgeTutorPerf(12132): validation_suite_progress completed=10 total=16 case_id=ua2
+06-28 06:41:29.298 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=779 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:41:29.300 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=779 total_mem_mb=3707 low_memory=false
+06-28 06:41:29.746 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=445
+06-28 06:41:29.747 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=781 total_mem_mb=3707 low_memory=false
+06-28 06:41:29.748 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=446
+06-28 06:41:29.748 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=28 conversation_context_chars=0
+06-28 06:41:29.750 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:41:29.751 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:41:29.758 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=6
+06-28 06:41:29.759 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.65038556 route_threshold=0.35
+06-28 06:41:29.760 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.65038556 kept_sim_scores=0.6504 dropped_sim_scores=0.6082,0.6075,0.6023,0.5972 context_char_cap=800 final_context_chars=803 prompt_chars=980 estimated_prompt_tokens=245 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:41:29.777 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:41:29.777 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:41:40.889 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=11111
+06-28 06:41:40.890 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=11604 source=first_token_flush
+06-28 06:42:07.987 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=38208 prompt_len=241 decode_len=190 prefill_us=11043510 decode_us=24969826
+06-28 06:42:07.987 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=849 hidden_thinking_chars=0 blank_visible_answer=false decode_len=190
+06-28 06:42:07.989 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.65038556 ui_visible_ttft_ms=11604 total_answer_ms=38703 prompt_tokens=241 decode_tokens=190 answer_chars=849 blank_visible_answer=false
+06-28 06:42:08.000 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=38713
+06-28 06:42:08.001 D/EdgeTutorPerf(12132): validation_suite_progress completed=11 total=16 case_id=ua3
+06-28 06:42:08.019 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=767 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:42:08.020 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=767 total_mem_mb=3707 low_memory=false
+06-28 06:42:08.462 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=441
+06-28 06:42:08.463 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=767 total_mem_mb=3707 low_memory=false
+06-28 06:42:08.464 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=441
+06-28 06:42:08.464 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=29 conversation_context_chars=0
+06-28 06:42:08.466 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:42:08.467 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:42:08.474 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=6
+06-28 06:42:08.474 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.5712685 route_threshold=0.35
+06-28 06:42:08.476 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.5712685 kept_sim_scores=0.5713 dropped_sim_scores=0.5533,0.5500,0.5467,0.5460 context_char_cap=800 final_context_chars=803 prompt_chars=978 estimated_prompt_tokens=245 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:42:08.491 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:42:08.491 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:42:21.716 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=13223
+06-28 06:42:21.717 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=13712 source=first_token_flush
+06-28 06:42:28.638 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=20145 prompt_len=309 decode_len=51 prefill_us=13165637 decode_us=6517827
+06-28 06:42:28.638 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=89 hidden_thinking_chars=0 blank_visible_answer=false decode_len=51
+06-28 06:42:28.640 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.5712685 ui_visible_ttft_ms=13712 total_answer_ms=20635 prompt_tokens=309 decode_tokens=51 answer_chars=89 blank_visible_answer=false
+06-28 06:42:28.649 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=20645
+06-28 06:42:28.651 D/EdgeTutorPerf(12132): validation_suite_progress completed=12 total=16 case_id=ua4
+06-28 06:42:28.668 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=772 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:42:28.669 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=772 total_mem_mb=3707 low_memory=false
+06-28 06:42:29.100 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=430
+06-28 06:42:29.102 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=772 total_mem_mb=3707 low_memory=false
+06-28 06:42:29.102 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=430
+06-28 06:42:29.103 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=20 conversation_context_chars=0
+06-28 06:42:29.105 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:42:29.105 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:42:29.112 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=6
+06-28 06:42:29.113 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.5696329 route_threshold=0.35
+06-28 06:42:29.114 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.5696329 kept_sim_scores=0.5696 dropped_sim_scores=0.5692,0.5672,0.5596,0.5577 context_char_cap=800 final_context_chars=803 prompt_chars=972 estimated_prompt_tokens=243 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:42:29.131 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:42:29.131 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:42:39.717 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=10584
+06-28 06:42:39.717 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=11063 source=first_token_flush
+06-28 06:43:17.431 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=48297 prompt_len=231 decode_len=266 prefill_us=10518893 decode_us=34865590
+06-28 06:43:17.431 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=1168 hidden_thinking_chars=0 blank_visible_answer=false decode_len=266
+06-28 06:43:17.433 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.5696329 ui_visible_ttft_ms=11063 total_answer_ms=48779 prompt_tokens=231 decode_tokens=266 answer_chars=1168 blank_visible_answer=false
+06-28 06:43:17.446 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=48792
+06-28 06:43:17.447 D/EdgeTutorPerf(12132): validation_suite_progress completed=13 total=16 case_id=na1
+06-28 06:43:17.466 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=777 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:43:17.468 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=777 total_mem_mb=3707 low_memory=false
+06-28 06:43:17.910 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=441
+06-28 06:43:17.912 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=778 total_mem_mb=3707 low_memory=false
+06-28 06:43:17.912 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=442
+06-28 06:43:17.912 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=32 conversation_context_chars=0
+06-28 06:43:17.914 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=1
+06-28 06:43:17.915 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:43:17.922 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=6
+06-28 06:43:17.922 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.66092575 route_threshold=0.35
+06-28 06:43:17.924 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.66092575 kept_sim_scores=0.6609 dropped_sim_scores=0.6338,0.6153,0.6151,0.6114 context_char_cap=800 final_context_chars=803 prompt_chars=984 estimated_prompt_tokens=246 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:43:17.939 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:43:17.939 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:43:28.546 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=10605
+06-28 06:43:28.546 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=11096 source=first_token_flush
+06-28 06:43:30.128 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=12187 prompt_len=237 decode_len=12 prefill_us=10544627 decode_us=1463675
+06-28 06:43:30.128 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=3 hidden_thinking_chars=0 blank_visible_answer=false decode_len=12
+06-28 06:43:30.130 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.66092575 ui_visible_ttft_ms=11096 total_answer_ms=12680 prompt_tokens=237 decode_tokens=12 answer_chars=3 blank_visible_answer=false
+06-28 06:43:30.139 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=12689
+06-28 06:43:30.141 D/EdgeTutorPerf(12132): validation_suite_progress completed=14 total=16 case_id=na2
+06-28 06:43:30.155 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=767 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:43:30.156 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=767 total_mem_mb=3707 low_memory=false
+06-28 06:43:30.588 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=431
+06-28 06:43:30.590 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=766 total_mem_mb=3707 low_memory=false
+06-28 06:43:30.591 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=431
+06-28 06:43:30.591 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=32 conversation_context_chars=0
+06-28 06:43:30.593 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=1
+06-28 06:43:30.594 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:43:30.601 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=7
+06-28 06:43:30.602 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.54969406 route_threshold=0.35
+06-28 06:43:30.603 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.54969406 kept_sim_scores=0.5497 dropped_sim_scores=0.5183,0.5170,0.5143,0.5109 context_char_cap=800 final_context_chars=803 prompt_chars=984 estimated_prompt_tokens=246 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:43:30.618 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:43:30.618 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:43:40.412 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=9793
+06-28 06:43:40.413 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=10269 source=first_token_flush
+06-28 06:43:41.836 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=11217 prompt_len=210 decode_len=11 prefill_us=9742398 decode_us=1313083
+06-28 06:43:41.837 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=42 hidden_thinking_chars=0 blank_visible_answer=false decode_len=11
+06-28 06:43:41.839 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.54969406 ui_visible_ttft_ms=10269 total_answer_ms=11695 prompt_tokens=210 decode_tokens=11 answer_chars=42 blank_visible_answer=false
+06-28 06:43:41.848 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=11704
+06-28 06:43:41.850 D/EdgeTutorPerf(12132): validation_suite_progress completed=15 total=16 case_id=na3
+06-28 06:43:41.866 D/EdgeTutorPerf(12132): query_memory_policy doc_id=5 avail_mem_mb=780 low_mem_threshold_mb=200 release_embedder=false
+06-28 06:43:41.868 D/EdgeTutorPerf(12132): query_embed_before doc_id=5 avail_mem_mb=780 total_mem_mb=3707 low_memory=false
+06-28 06:43:42.311 D/EdgeTutorPerf(12132): query_embed doc_id=5 elapsed_ms=442
+06-28 06:43:42.312 D/EdgeTutorPerf(12132): query_embed_after doc_id=5 avail_mem_mb=779 total_mem_mb=3707 low_memory=false
+06-28 06:43:42.312 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 query_embed_ms=443
+06-28 06:43:42.313 D/EdgeTutorPerf(12132): query_rewrite doc_id=5 used_followup_context=false retrieval_query_chars=21 conversation_context_chars=0
+06-28 06:43:42.315 D/EdgeTutorPerf(12132): retrieval_search doc_id=5 k=5 elapsed_ms=2
+06-28 06:43:42.315 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 retrieval_search_ms=2
+06-28 06:43:42.323 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 prompt_build_ms=7
+06-28 06:43:42.323 D/EdgeTutorPerf(12132): query_route doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6302871 route_threshold=0.35
+06-28 06:43:42.325 D/EdgeTutorPerf(12132): prompt_metrics doc_id=5 prompt_policy=1x800 retrieved_k=5 kept_k=1 max_sim=0.6302871 kept_sim_scores=0.6303 dropped_sim_scores=0.5753,0.5709,0.5702,0.5686 context_char_cap=800 final_context_chars=803 prompt_chars=973 estimated_prompt_tokens=244 query_route=GROUNDED route_reason=semantic_threshold_met route_threshold=0.35
+06-28 06:43:42.340 D/EdgeTutorPerf(12132): llm_thinking_config enable_thinking=false verified=true
+06-28 06:43:42.340 D/MnnEngine(12132): Verified effective config enable_thinking=false
+06-28 06:43:53.800 D/EdgeTutorPerf(12132): llm_decode_first_token source=query llm_native_ttft_ms=11459
+06-28 06:43:53.801 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 ui_visible_ttft_ms=11947 source=first_token_flush
+06-28 06:44:06.109 D/EdgeTutorPerf(12132): llm_decode_total source=query duration_ms=23767 prompt_len=255 decode_len=84 prefill_us=11408915 decode_us=11459301
+06-28 06:44:06.109 D/EdgeTutorPerf(12132): llm_generation_result source=query visible_answer_chars=369 hidden_thinking_chars=0 blank_visible_answer=false decode_len=84
+06-28 06:44:06.111 D/EdgeTutorPerf(12132): query_complete doc_id=5 query_route=GROUNDED route_reason=semantic_threshold_met max_sim=0.6302871 ui_visible_ttft_ms=11947 total_answer_ms=24257 prompt_tokens=255 decode_tokens=84 answer_chars=369 blank_visible_answer=false
+06-28 06:44:06.120 D/EdgeTutorPerf(12132): query_stage_timing doc_id=5 total_answer_ms=24266
+06-28 06:44:06.122 D/EdgeTutorPerf(12132): validation_suite_progress completed=16 total=16 case_id=na4
+06-28 06:44:06.219 D/EdgeTutorPerf(12132): validation_suite_complete cases=16 output_dir=/storage/emulated/0/Android/data/com.edgetutor.mnn/files/reports

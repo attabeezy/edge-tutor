@@ -1,0 +1,162 @@
+# Python Query-Mode Evaluation
+
+## auto / g1 / grounded
+
+Question: What is calculus?
+
+Elapsed: 41.40s; blank: False; error: none
+
+Calculus is described as a subject that "generally calls itself" by terrifying names of Differential Calculus and Integral Calculus; it involves operations such as differentiation (setting down results on one side) and integration (setting them down on the other). The text notes that this work, titled *Calculus Made Easy*, presents these methods in simple fashion without rigorously demonstrating their validity.
+
+## auto / g2 / grounded
+
+Question: What is a differential?
+
+Elapsed: 39.78s; blank: False; error: none
+
+A total differential ($dy$ or $d\phi$) represents the real change in a quantity when both its independent variable and dependent variable are varying at the same time, as opposed to partial differentials which only account for one variation. It can be written using Greek deltas (e.g., $\frac{\partial}{\partial u}$), but it is also indicated by placing an accent on the function symbol itself ($F'$).
+
+## auto / g3 / grounded
+
+Question: Explain integration in simple terms.
+
+Elapsed: 39.41s; blank: False; error: none
+
+Integration is simply adding up all the tiny "little bits" (like seconds) that make a whole larger amount of time or area, just as you would add up many small pieces to find one big piece. It means taking everything together and getting the total result.
+
+## auto / g4 / grounded
+
+Question: Give a small worked example of differentiation.
+
+Elapsed: 5.91s; blank: True; error: ResponseError: an error was encountered while running the model: read tcp 127.0.0.1:55093->127.0.0.1:50873: wsarecv: An existing connection was forcibly closed by the remote host. (status code: 500)
+
+(no visible answer)
+
+## auto / f1 / follow_up
+
+Question: Show me an example of that.
+
+Elapsed: 117.16s; blank: False; error: none
+
+Based on Passage 2, a specific example is given where Mr. Millionaire receives £1000 and his secretary (who gives him a fraction) only receives £1 or less, illustrating how "small" quantities can be negligible compared to the original amount. Another example provided in that passage involves an ox worrying about fleas of different orders: he ignores flea-flea interactions because they are second-order smallness relative to the size of his own body (an ordinary flea), whereas a gross flea is still too large for him to worry about, even though it is also negligible compared to its own weight.
+
+## auto / f2 / follow_up
+
+Question: Can you explain it more simply?
+
+Elapsed: 90.69s; blank: False; error: none
+
+Yes. In calculus, "rate" is defined as **the ratio of what changes in one direction over how much time passes**. This means if something happens for a certain amount of time $t$, its rate is the total change divided by that time ($\frac{d}{dt}$). For example:
+*   A car moving 10 yards per second has a speed (rate) of **6,000 yards per minute** because it covers 3600 seconds in one hour.
+*   Spending money at the rate of £4320/year over a year means you spend that exact amount every single day for all those years ($\frac{d}{t}$).
+
+Essentially, **rate is how much something changes per unit of time**.
+
+## auto / f3 / follow_up
+
+Question: How is it reversed?
+
+Elapsed: 60.92s; blank: False; error: none
+
+Differentiation can be performed in reverse to find what function produces that specific derivative value. For example:
+*   If $y = x^2$, then differentiating gives $dy/dx = 2x$. To solve for the original function, we integrate both sides with respect to $x$: $\int dy = \int 2x dx$, which yields $y = x^2 + C$ (where $C$ is a constant).
+*   If $dx = e^{-t}$ and $dy = t dt$, then differentiating the second equation gives $d(dx) = d(e^{-t})$. Integrating both sides with respect to time ($t$), we get $\int dx = \int e^{-t} dt$, which yields $x = -e^{-t} + C$.
+
+## auto / f4 / follow_up
+
+Question: Give another example.
+
+Elapsed: 83.87s; blank: False; error: none
+
+(1) If $x$ represents time (in seconds), then distance traveled by an object moving with constant speed $v$ at a rate of 60 miles per hour is given by $\frac{3}{5} \times v$. Since the total distance covered in one minute ($\Delta t = 60/60 = 1$ second) equals this value, we can write:
+$$x = \left(\frac{v}{2}\right)(t - 1) + C$$
+
+Alternatively, using $y$ for time and $z$ for distance (where the rate is $\Delta z / \Delta y = v/60$):
+$$\int x dy = \frac{x^3}{9} + Dy + F(y)$$
+
+## auto / ua1 / unsupported_academic
+
+Question: What causes a solar eclipse?
+
+Elapsed: 16.86s; blank: False; error: none
+
+A solar eclipse occurs when the Moon passes directly between Earth and Sun, casting its shadow onto Earth. For this to happen:
+
+1.  **Alignment**: The three bodies must be perfectly aligned in line (Sun-Earth-Moon).
+2.  **Relative Sizes**: Since the Moon is much larger than the Sun from our perspective, it blocks enough of the sun's light for a partial eclipse; if they were too close together to block all sunlight, we would see only the bright core and no shadow at all—a total solar eclipse.
+
+The specific conditions required are that Earth must be between the Sun and Moon (at least 100% of the way), while simultaneously the Moon's distance from Earth is greater than its apparent size in the sky relative to the sun, allowing it to cast a distinct shadow on our planet rather than just illuminating us directly.
+
+## auto / ua2 / unsupported_academic
+
+Question: Explain photosynthesis.
+
+Elapsed: 26.27s; blank: False; error: none
+
+Photosynthesis is a biological process where green plants, algae, and certain bacteria convert light energy (usually sunlight) into chemical energy stored in glucose molecules. This occurs primarily through chlorophyll pigments within plant cells at the **chloroplasts**, which capture photons to drive reactions that produce oxygen ($O_2$), water ($H_2O$), and carbohydrates like starch or sugar.
+
+The process follows a two-stage sequence:
+1.  **Light-dependent Reactions**: Light energy splits water molecules, releasing electrons and protons (hydrogen ions). This generates ATP and NADPH for the next stage. Crucially, this phase produces oxygen as a byproduct ($2H_2O \rightarrow O_2 + 4H^+ + 4e^-$), which is released into the atmosphere during respiration or diffusion out of cells.
+2.  **Calvin Cycle (Light-Independent Reactions)**: Using ATP and NADPH, carbon dioxide from the air combines with sugars to regenerate ribulose bisphosphate ($RuBP$). This cycle fixes atmospheric CO₂ into organic compounds like glucose.
+
+Overall equation for oxygenic photosynthesis:
+$$6CO_2 + 6H_2O + \text{Light Energy} \rightarrow C_6H_{12}O_6 (\text{Glucose}) + 6O_2$$
+
+## auto / ua3 / unsupported_academic
+
+Question: Who wrote Things Fall Apart?
+
+Elapsed: 30.09s; blank: False; error: none
+
+Nothing in the provided context mentions "Things Fall Apart." The document contains excerpts from a Project Gutenberg eBook titled *Calculus Made Easy* by Silvanus Thompson and discusses copyright disclaimers, limited warranties, and mathematical concepts like differentiation. There is no information regarding who wrote *Things Fall Apart*.
+
+## auto / ua4 / unsupported_academic
+
+Question: What is the capital of Japan?
+
+Elapsed: 33.49s; blank: False; error: none
+
+Based on the provided document, there is no mention of a specific capital city for any country or nation in Japanese history. The text contains mathematical examples related to area calculations and polar coordinates but does not contain historical geographical data regarding capitals.
+
+## auto / na1 / non_academic
+
+Question: How do I bake bread?
+
+Elapsed: 22.81s; blank: False; error: none
+
+To bake bread, you need a simple mix of flour and water to create dough, then heat it in an oven until golden brown. Here is the standard process:
+
+1.  **Combine Ingredients**: Mix dry ingredients (flour) with wet ingredients (water). Add eggs or milk as needed for texture.
+2.  **Knead**: Knead gently and thoroughly to form a smooth, elastic dough. Do not over-knead; it should be soft but clingy.
+3.  **Rest the Dough**: Let the dough rest in a warm place (usually at room temperature) for about half an hour before shaping or baking. This allows gluten to relax.
+4.  **Shape and Bake**: Divide the dough into balls, shape them by hand, and bake until they are golden brown on top. You can use either a traditional oven or a toaster oven/baking sheet depending on your setup.
+
+## auto / na2 / non_academic
+
+Question: Write a short birthday greeting.
+
+Elapsed: 14.16s; blank: False; error: none
+
+Happy Birthday! 🎉
+
+## auto / na3 / non_academic
+
+Question: What should I pack for a picnic?
+
+Elapsed: 13.24s; blank: False; error: none
+
+For a standard picnic, focus on these essentials:
+*   **Food:** A variety of fresh fruits and vegetables (lettuce, tomatoes, carrots), whole grains like bread or rice, nuts/seeds, dried fruit, yogurt, cheese, crackers, and chocolate. Avoid heavy meats unless you have leftovers.
+*   **Snacks & Beverages:** Chips, popcorn, pretzels, cookies, hot dogs with mustard/cheese (with a side of fries), soda water, lemonade or juice, and energy drinks for later in the day.
+*   **Drinkware:** A reusable cup or bottle to keep your beverages cool during outdoor events.
+
+Pack lightly so you can carry everything easily without leaving food behind!
+
+## auto / na4 / non_academic
+
+Question: Tell me a clean joke.
+
+Elapsed: 4.87s; blank: False; error: none
+
+Why don't scientists trust atoms? Because they make up everything, and if one atom gets destroyed, you can't even build another! 😄🧪
+

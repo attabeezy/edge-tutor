@@ -1,0 +1,92 @@
+case_id,category,policy,question,answer,sources,prompt_chars,prompt_tokens,prefill_us,decode_us,visible_ttft_ms,total_ms,available_memory_mb,is_general,error,correctness_0_2,grounding_0_2,relevance_0_2,clarity_0_2
+"g1","GROUNDED","1x800","What is calculus?","
+
+Calculus allows us to find the exact total accumulated from an infinite sequence of operations by integrating specific parameters. Specifically, differentiation of a curve represents its instantaneous velocity (the slope), while the indefinite integration of a function yields the area or total amount under it required for calculation purposes. The relationship between differentiation and inversion involves understanding that a given rate of change over time defines the shape of the curve itself over time intervals.
+
+General Answer:
+This response attempts to meet the criteria outlined regarding ""general answers.""","1. calculus enables us to get at the exact total that there would be as the result of an infinite number of operations. .","1073","248","12837202","17329481","14256","32207","791","false","","","","",""
+"g2","GROUNDED","1x800","What is a differential?","
+
+Differential is a small slice of a curve; a tangent line can't be drawn through every point on the whole curve without errors. It tells you how fast something changes. The derivative represents how the value of one function varies when the values of another function are near each other at the same times.
+
+General Answer:
+
+Differential calculus deals with derivatives.","1. ratio of the growing of y to the growing of x is, in the case before us, found to be 2x. *N.B.—This ratio dy dx is th.","1079","302","13541897","10665651","14691","25573","725","false","","","","",""
+"g3","GROUNDED","1x800","Explain integration in simple terms.","
+
+In the context of elementary calculus, **integration** represents a mathematical method of ""summing up all the areas under an existing curve over a given interval."" Unlike addition (arithmetic), integration treats area as a continuous quantity rather than discrete pieces (intervals). It effectively partitions every square foot of space under the curve into infinitely many infinitesimal strips, adding their individual areas sequentially until no space remains unused. Thus, its definition depends entirely on the shape and properties of the curve itself, without the existence of an implied starting unit or fixed width.
+
+If the textbook explicitly states the meaning of integral as the definite summation of a function's values over a range $[a, b]$, then the standard answer applies. However, since the provided text introduces the concept through examples like the series where each term takes half the previous one, suggesting a step-by-step accumulation, this description lacks explicit formal definitions for the entire field of integration. Consequently, the ""general answer"" must address the underlying principle described by those examples as ""definite summation of a function,"" but requires clarification regarding the specific formal definition used in higher-level mathematics which distinguishes between limits of integration, derivatives, and integrals based on these exact principles.
+
+Answer: Definitive summation of a function over a finite or infinite interval involving limits.","1. The process of “integrating” is to enable us to calculate totals that otherwise we should be unable to estimate direc.","1092","301","12936143","38820914","14032","55347","811","false","","","","",""
+"g4","GROUNDED","1x800","Give a small worked example of differentiation.","
+
+$\frac{dF}{dx} \quad \text{(the original answer)}$
+**Example:** For $F(x)=x^2$, $\Delta y / \Delta x = x$. Therefore, $dy/dx = 1$ (constant).
+
+**Worked Example:** Given $y=x^2$.
+
+$$dy = 2x dx$$
+
+Integrating both sides gives $y = x^2 + C$. Checking against case 1 ($y=x^2$): $y_1 - y_0 = x_1^2 - x_0^2 = (x_1-x_0)(x_1+x_0) = (C+C)x_1 = 2Cx_1$. This matches $2Cx_1$. The book supports it.","1. p. 13), we may write F ′(x) instead of d ( F (x) ) dx . Similarly, F ′′(x) will mean that the original function F (x).","1151","291","12973152","32577752","14334","48300","904","false","","","","",""
+"f1","FOLLOW_UP","1x800","Show me an example of that.","
+
+Let $F(x)$ be the unknown function whose derivative satisfies the relation derived from the original problem. The standard derivation involves identifying $\frac{d^2y}{dx^2}$ such that this equals the third derivative given, assuming the fourth term is zero:
+
+$$ \frac{d^2y}{dx^2} = -\frac{4}{x^2} $$
+
+Integrating from infinity gives $\int (\text{inf})^{-1/2} [0 - (-4)] dx = \infty$. Thus, there exists no valid function $y$ satisfying the condition for all $x$, and therefore, the original assumption fails. The result contradicts the text's statement that $\frac{d^2y}{dx^2}$ represents $-k\cdot x^2$ where $k>0$. Consequently, the solution is inconclusive; the text explicitly says ""It does not appear."" We must proceed with a counter-example based on the definition of derivations.
+
+**Answer:**
+To show that differentiating $2^{-3}(F'')(x)$ yields a result contradicting the text's claim that its second derivative equals $-k x^2$, we observe:
+$$ \frac{d}{dx}\left[2^{2}-3\right] = \frac{d}{dx}[1] = -k $$
+Since $\nexists$, $2^{-3}$ cannot be represented by any polynomial in $F'(x)$. Therefore, the differentiation process described implies the existence of a non-existent constant function satisfying the required constraints. This demonstrates why $2^{-3}$ is inconsistent with the book's conclusion regarding finite derivatives.","1. p. 13), we may write F ′(x) instead of d ( F (x) ) dx . Similarly, F ′′(x) will mean that the original function F (x).","1174","298","17851786","63921886","19315","87287","889","false","","","","",""
+"f2","FOLLOW_UP","1x800","Can you explain it more simply?","
+
+*No.*","1. proportion—a ratio—so many pence in the pound). Nothing to do even with birth-rate or death-rate, though these words .","1397","347","20673374","1333263","22206","22830","841","false","","","","",""
+"f3","FOLLOW_UP","1x800","How is it reversed?","","1. p. 13), we may write F ′(x) instead of d ( F (x) ) dx . Similarly, F ′′(x) will mean that the original function F (x).","1118","284","16215938","102918250","-1","127839","909","false","","","","",""
+"f4","FOLLOW_UP","1x800","Give another example.","","1. process of integrating, it will therefore also reappear in the value of y. So we may go to work as before, thus dy = .","1436","381","16180685","83012687","-1","106846","837","false","","","","",""
+"ua1","UNSUPPORTED_ACADEMIC","1x800","What causes a solar eclipse?","
+
+The textbook does not cover this.","1. has the shape of a hor- izontal isosceles triangular prism with the apex underneath, and the PARTIAL DIFFERENTIATION .","1080","253","11509496","1475017","12612","13642","809","false","","","","",""
+"ua2","UNSUPPORTED_ACADEMIC","1x800","Explain photosynthesis.","
+
+Photosynthesis occurs when plants use sunlight, water, and carbon dioxide in chloroplasts to convert into glucose ($C_6H_{12}O_6$) and oxygen ($O_2$). This process can be summarized by the chemical equation:
+$$2CO_2 + H_2O \xrightarrow{\text{sunlight/CH}_3PO_4} C_6H_{12}O_6 + O_2$$","1. it will be seen that what we are trying to find is in reality the ultimate value of the expression ( 1 + 1 n )n , whi.","1079","283","12124475","13480195","13224","27204","778","false","","","","",""
+"ua3","UNSUPPORTED_ACADEMIC","1x800","Who wrote Things Fall Apart?","","1. falls into the hands of the professional mathematicians, they will (if not too lazy) rise up as one man, and damn it .","1084","253","11471785","82832870","-1","101619","909","false","","","","",""
+"ua4","UNSUPPORTED_ACADEMIC","1x800","What is the capital of Japan?","
+
+Japan has no national capital; the capital of any Japanese region or city is designated by local government.","1. unity will grow will be 2.71828. 1 2 3 4 5 6 7 8 9 P U 1 2.7182 O T Fig. 37. Epsilon. To this mysterious number 2.718.","1082","321","14712785","3264853","15977","18889","835","false","","","","",""
+"na1","NON_ACADEMIC","1x800","How do I bake bread?","
+
+Master these, and the rest will follow.
+
+***Answer:***
+Based on the passage ""What one fool can do, another can,"" the answer varies depending on the context. However, since the provided excerpt mentions no specific examples of baking bread or cooking methods other than ""the parts that are not hard"":
+
+*   **If referring to ""Master these"" (reading for a math problem):** You must first solve the math part before reading the non-hard section. Once the non-hard parts (""what one fool can do"") were mastered through study, any remaining craft becomes available. Specifically, in mathematics, this refers to finding prime factors, solving algebraic equations, or identifying integers within a set. In English literature, it implies that after understanding logic and grammar, basic actions like writing an essay, drafting fiction, or writing poetry become accessible as new skills emerge.
+*   **If referring to ""bake bread"" (literal culinary context implied by the question):**
+    *   **In a recipe:** One starts by heating water, chopping a loaf of yeast into small pieces (mashed), adding sugar (often 3 times the weight of the bread dough), and then stirring in flour and eggs until the mixture forms a uniform batter. Baking typically takes at least one hour under warm conditions.
+    *   **Traditionally/Traditional:** In medieval times, bread could often be saved during harvests by soaking grains in water, fermenting them (a process known as levigation), letting the flour settle, and then baking the dried product in the oven or using a baker's stick.
+
+**Direct Answer:**
+The phrase ""mastering these thoroughly"" implies understanding the calculation steps followed by practical application, while the phrase ""bread"" itself usually requires a kitchen tool. Therefore, the specific steps depend entirely on whether the user means the mathematical process or actual cooking. Without further instruction in the source text, either option applies.","1. mostly clever fools—seldom take the trouble to show you how easy the easy calculations are. On the contrary, they see.","1076","243","11343663","53450398","12459","70034","916","false","","","","",""
+"na2","NON_ACADEMIC","1x800","Write a short birthday greeting.","","1. together make one hour. When you see an expression that begins with this terrifying sym- bol, you will henceforth kno.","1088","249","11519889","81217701","-1","100306","876","false","","","","",""
+"na3","NON_ACADEMIC","1x800","What should I pack for a picnic?","
+
+If you are traveling or planning to visit an outdoor location without proper weather forecasts, check the weather forecast before heading out on any day; if it rains or snows or has high winds, it would be better to avoid traveling today or tomorrow.
+
+However, the textbook covers the following regarding packing for picnics:
+
+*   **Patches:** These can be used on the outside part of the object or patching holes in the object itself so it doesn't become wetter than before when drying. The text says ""This technique may be applied as soon as the drying phase is finished.""
+*   **Fabrication of Objects:** Fabrication is not mentioned here; usually, these texts focus on preservation rather than mechanical fabrication during drying phases unless specifically discussed elsewhere.
+
+Therefore, while ""packing"" generally involves preparing items for transport, the book primarily discusses materials like patches and fabricating objects based on drying processes rather than specific packing mechanisms.
+
+**General Answer:** The textbook does not cover this.","1. deletions to any Project Gutenberg-tm work, and (c) any Defect you cause. Section 2. Information about the Mission of.","1088","222","10058751","28922767","11164","41963","943","false","","","","",""
+"na4","NON_ACADEMIC","1x800","Tell me a clean joke.","
+
+Here is the short joke based on *The Oxford Book of Idioms*:
+
+**""Why is that green box a toilet?""**
+""The textbook tells me: because it's blue."" ","1. proportion—a ratio—so many pence in the pound). Nothing to do even with birth-rate or death-rate, though these words .","1077","267","11672923","5907937","12797","18584","977","false","","","","",""
