@@ -35,6 +35,12 @@ def main():
         default=False,
         help="Print step-by-step debug info between question and response.",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["rag", "general", "auto"],
+        default="rag",
+        help="Query mode: forced document RAG, retrieval-free general knowledge, or experimental automatic routing.",
+    )
     args = parser.parse_args()
 
     embed_model = EMBED_MODELS[args.embedding]
@@ -65,7 +71,15 @@ def main():
             continue
 
         print("Tutor: ", end="", flush=True)
-        _, history = ask(question, args.doc_name, history=history, embed_model=embed_model, verbose=args.verbose, llm_model=llm_model)
+        _, history = ask(
+            question,
+            args.doc_name,
+            history=history,
+            embed_model=embed_model,
+            verbose=args.verbose,
+            llm_model=llm_model,
+            mode=args.mode,
+        )
         print()
 
 

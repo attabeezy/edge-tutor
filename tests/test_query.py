@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.rag import query
-from src.rag.query import _is_followup, _build_prompt
+from src.rag.query import _is_followup, _build_prompt, _has_meaningful_overlap
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +74,24 @@ def test_build_prompt_passages_separated():
 
 
 # ---------------------------------------------------------------------------
+# routing
+# ---------------------------------------------------------------------------
+
+def test_meaningful_overlap_accepts_document_topic():
+    assert _has_meaningful_overlap(
+        "What is calculus?",
+        ["Calculus enables us to calculate exact totals."],
+    )
+
+
+def test_meaningful_overlap_ignores_common_question_words():
+    assert not _has_meaningful_overlap(
+        "What causes a solar eclipse?",
+        ["What is the value of a differential at the point?"],
+    )
+
+
+# ---------------------------------------------------------------------------
 # ask
 # ---------------------------------------------------------------------------
 
@@ -81,7 +99,8 @@ def test_ask_always_uses_retrieved_chunks(monkeypatch):
     def fake_retrieve_chunks(question, doc_name, top_k=query.TOP_K, embed_model=query.DEFAULT_EMBED_MODEL, verbose=False):
         return ["A retrieved chunk with no lexical overlap."], 99.0
 
-    def fake_chat(model, messages, stream, options):
+    def fake_chat(model, messages, stream, think, options):
+        assert think is False
         assert "A retrieved chunk with no lexical overlap." in messages[-1]["content"]
         assert "Question: totally unrelated prompt" in messages[-1]["content"]
         yield {"message": {"content": "answer"}}
@@ -93,3 +112,46 @@ def test_ask_always_uses_retrieved_chunks(monkeypatch):
 
     assert response == "answer"
     assert history[-1] == {"role": "assistant", "content": "answer"}
+
+
+def test_ask_general_bypasses_retrieval(monkeypatch):
+    def fail_retrieve(*args, **kwargs):
+        raise AssertionError("general mode must not retrieve")
+
+    def fake_chat(model, messages, stream, think, options):
+        assert think is False
+        assert messages[1]["content"] == "What is the capital of Japan?"
+        yield {"message": {"content": "Tokyo."}}
+
+    monkeypatch.setattr(query, "retrieve_chunks", fail_retrieve)
+    monkeypatch.setattr(query.ollama, "chat", fake_chat)
+
+    response, _ = query.ask(
+        "What is the capital of Japan?",
+        "Doc",
+        stream=False,
+        mode="general",
+    )
+
+    assert response == "Tokyo."
+
+
+def test_ask_auto_bypasses_rag_without_meaningful_overlap(monkeypatch):
+    def fake_retrieve(*args, **kwargs):
+        return ["A passage about differential calculus."], 1.0
+
+    def fake_chat(model, messages, stream, think, options):
+        assert "Context passages" not in messages[1]["content"]
+        yield {"message": {"content": "Use flour, water, yeast, and salt."}}
+
+    monkeypatch.setattr(query, "retrieve_chunks", fake_retrieve)
+    monkeypatch.setattr(query.ollama, "chat", fake_chat)
+
+    response, _ = query.ask(
+        "How do I bake bread?",
+        "Doc",
+        stream=False,
+        mode="auto",
+    )
+
+    assert response.startswith("Use flour")

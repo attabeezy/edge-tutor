@@ -7,6 +7,7 @@ Entry points:
 import re
 import time
 import os
+from typing import Literal
 import ollama
 
 from src.ingestion.pipeline import retrieve, get_embed_model, EMBED_MODEL as DEFAULT_EMBED_MODEL
@@ -19,6 +20,18 @@ INDEX_DIR            = "data/index"
 TOP_K                = 3
 
 SYSTEM_PROMPT = "Be concise."
+GENERAL_SYSTEM_PROMPT = (
+    "Answer from general knowledge. Be concise. "
+    "Do not claim that the answer comes from the user's textbook."
+)
+QueryMode = Literal["rag", "general", "auto"]
+
+_ROUTING_STOP_WORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "can", "do", "does", "for",
+    "from", "give", "how", "i", "in", "is", "it", "me", "of", "on", "or",
+    "should", "tell", "that", "the", "this", "to", "what", "who", "with",
+    "write", "you",
+}
 
 # ------------------------------------------------------------------
 # Retrieve
@@ -65,6 +78,18 @@ def _build_prompt(question: str, chunks: list[str]) -> str:
         f"Question: {question}"
     )
 
+def _meaningful_tokens(text: str) -> set[str]:
+    return {
+        token for token in re.findall(r"[a-z0-9]+", text.lower())
+        if len(token) >= 4 and token not in _ROUTING_STOP_WORDS
+    }
+
+
+def _has_meaningful_overlap(question: str, chunks: list[str]) -> bool:
+    question_terms = _meaningful_tokens(question)
+    context_terms = _meaningful_tokens(" ".join(chunks))
+    return bool(question_terms & context_terms)
+
 
 # ------------------------------------------------------------------
 # Generate (streaming)
@@ -77,6 +102,7 @@ def ask(
     embed_model: str = DEFAULT_EMBED_MODEL,
     verbose: bool = False,
     llm_model: str = LLM_MODEL,
+    mode: QueryMode = "rag",
 ) -> tuple[str, list[dict]]:
     """
     Retrieve relevant chunks and generate an answer via Ollama.
@@ -87,28 +113,45 @@ def ask(
 
     Returns (response_text, updated_history).
     """
-    history = list(history or [])
+    if mode not in {"rag", "general", "auto"}:
+        raise ValueError(f"Unsupported query mode: {mode}")
 
-    if _is_followup(question) and history:
+    history = list(history or [])
+    system_prompt = SYSTEM_PROMPT
+
+    if mode == "general":
+        history.append({"role": "user", "content": question})
+        system_prompt = GENERAL_SYSTEM_PROMPT
+        route = "GENERAL"
+    elif _is_followup(question) and history:
         # Continuation: don't re-retrieve; just append the bare question
         history.append({"role": "user", "content": question})
+        route = "FOLLOW_UP"
     else:
         chunks, _min_dist = retrieve_chunks(question, doc_name, embed_model=embed_model, verbose=verbose)
-        if verbose:
-            print("[route]     GROUNDED", flush=True)
-        prompt = _build_prompt(question, chunks)
-        history.append({"role": "user", "content": prompt})
+        use_rag = mode == "rag" or _has_meaningful_overlap(question, chunks)
+        if use_rag:
+            history.append({"role": "user", "content": _build_prompt(question, chunks)})
+            route = "GROUNDED"
+        else:
+            history.append({"role": "user", "content": question})
+            system_prompt = GENERAL_SYSTEM_PROMPT
+            route = "GENERAL"
+
+    if verbose:
+        print(f"[route]     {route}", flush=True)
 
     if verbose:
         print(f"[llm]       sending to {llm_model}...", flush=True)
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+    messages = [{"role": "system", "content": system_prompt}] + history
 
     response_text = ""
     stream_iter = ollama.chat(
         model=llm_model,
         messages=messages,
         stream=True,
+        think=False,
         options={"temperature": 0.3, "num_predict": 450},
     )
 
