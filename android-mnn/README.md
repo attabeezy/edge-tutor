@@ -92,10 +92,13 @@ visual.mnn.weight    (~60 MB, vision weights — unused for text-only RAG)
 
 > **Thinking mode:** Qwen3.5-0.8B defaults to `enable_thinking=true`.
 > EdgeTutor does not expose that mode for this model package: hidden reasoning
-> can consume the complete 600-token native budget without producing a visible
+> can consume the complete native token budget without producing a visible
 > answer. `MnnEngine` forces `false` at initialization and before every query,
 > reads the effective merged native config back, and fails generation if the
 > override is not present. `ThinkingTagFilter` remains as defense in depth.
+
+Normal text and vision responses are capped at 192 generated tokens. Warm-up
+generation uses a separate 8-token cap.
 
 ### 3. ONNX embedding assets (same as android-ltk)
 

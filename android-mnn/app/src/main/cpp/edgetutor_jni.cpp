@@ -19,6 +19,11 @@
 
 using namespace MNN::Transformer;
 
+namespace {
+constexpr int WARM_UP_MAX_NEW_TOKENS = 8;
+constexpr int NORMAL_MAX_NEW_TOKENS = 192;
+}
+
 static void restoreAndroidSteppingStatusIfNeeded(Llm* llm) {
     if (!llm) return;
     auto* context = llm->getContext();
@@ -243,11 +248,10 @@ Java_com_edgetutor_mnn_llm_MnnNativeBridge_submitPrompt(JNIEnv* env, jclass /*cl
     KotlinCallbackBuf cbBuf(env, progressListener, onProgress);
     std::ostream os(&cbBuf);
 
-    constexpr int MAX_NEW_TOKENS = 600;
     llm->response(inputIds, &os, "<eop>", 0);
     restoreAndroidSteppingStatusIfNeeded(llm);
     int generated = 0;
-    while (!cbBuf.isStopped() && !cbBuf.isEop() && generated < MAX_NEW_TOKENS) {
+    while (!cbBuf.isStopped() && !cbBuf.isEop() && generated < WARM_UP_MAX_NEW_TOKENS) {
         llm->generate(1);
         generated++;
         restoreAndroidSteppingStatusIfNeeded(llm);
@@ -306,9 +310,8 @@ Java_com_edgetutor_mnn_llm_MnnNativeBridge_submitMessages(JNIEnv* env, jclass,
     std::ostream output(&callback);
     llm->response(messages, &output, "<eop>", 0);
     restoreAndroidSteppingStatusIfNeeded(llm);
-    constexpr int MAX_NEW_TOKENS = 600;
     int generated = 0;
-    while (!callback.isStopped() && !callback.isEop() && generated < MAX_NEW_TOKENS) {
+    while (!callback.isStopped() && !callback.isEop() && generated < NORMAL_MAX_NEW_TOKENS) {
         llm->generate(1);
         ++generated;
         restoreAndroidSteppingStatusIfNeeded(llm);
@@ -381,9 +384,8 @@ Java_com_edgetutor_mnn_llm_MnnNativeBridge_submitMessagesWithImage(
     std::ostream output(&callback);
     llm->response(prompt, &output, "<eop>", 0);
     restoreAndroidSteppingStatusIfNeeded(llm);
-    constexpr int MAX_NEW_TOKENS = 600;
     int generated = 0;
-    while (!callback.isStopped() && !callback.isEop() && generated < MAX_NEW_TOKENS) {
+    while (!callback.isStopped() && !callback.isEop() && generated < NORMAL_MAX_NEW_TOKENS) {
         llm->generate(1);
         ++generated;
         restoreAndroidSteppingStatusIfNeeded(llm);
