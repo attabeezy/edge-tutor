@@ -47,5 +47,26 @@ interface LlmEngine : AutoCloseable {
      *
      * @return The complete response string after generation finishes.
      */
-    suspend fun generate(prompt: String, onToken: (String) -> Unit): String
+    suspend fun generate(prompt: String, onToken: (String) -> Unit): String =
+        generateMeasured(prompt, onToken).text
+
+    suspend fun generateMeasured(
+        prompt: String,
+        onToken: (String) -> Unit,
+    ): GenerationResult
 }
+
+data class GenerationMetrics(
+    val promptTokens: Long,
+    val decodeTokens: Long,
+    val prefillUs: Long,
+    val decodeUs: Long,
+    val visibleTtftMs: Long,
+    val totalMs: Long,
+)
+
+data class GenerationResult(
+    val text: String,
+    val metrics: GenerationMetrics,
+    val thinking: String = "",
+)

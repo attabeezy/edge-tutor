@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.edgetutor.mnn.data.db.AppDatabase
 import com.edgetutor.mnn.data.db.DocumentEntity
+import com.edgetutor.mnn.attachments.ImageAttachmentStore
 import com.edgetutor.mnn.data.db.IngestionStatus
 import com.edgetutor.mnn.ingestion.Embedder
 import com.edgetutor.mnn.ingestion.PdfExtractor
@@ -74,6 +75,7 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
         activeJobs.clear()
         db.documentDao().getAll().forEach { doc ->
             File(getApplication<Application>().filesDir, "${doc.id}.idx").delete()
+            ImageAttachmentStore(getApplication()).deleteForDocument(doc.id)
             db.documentDao().delete(doc)
         }
     }
@@ -203,6 +205,7 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(doc: DocumentEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             File(getApplication<Application>().filesDir, "${doc.id}.idx").delete()
+            ImageAttachmentStore(getApplication()).deleteForDocument(doc.id)
             db.documentDao().delete(doc)
         }
     }

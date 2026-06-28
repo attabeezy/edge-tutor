@@ -91,6 +91,27 @@ object MnnNativeBridge {
         progressListener: MnnProgressListener?,
     ): Map<String, Long>
 
+    @JvmStatic external fun submitMessages(
+        sessionPtr: Long,
+        roles: Array<String>,
+        contents: Array<String>,
+        progressListener: MnnProgressListener?,
+    ): Map<String, Long>
+
+    @JvmStatic external fun submitMessagesWithImage(
+        sessionPtr: Long,
+        roles: Array<String>,
+        contents: Array<String>,
+        rgb: ByteArray,
+        width: Int,
+        height: Int,
+        progressListener: MnnProgressListener?,
+    ): Map<String, Long>
+
+    @JvmStatic external fun updateConfig(sessionPtr: Long, configJson: String)
+    @JvmStatic external fun dumpConfig(sessionPtr: Long): String
+    @JvmStatic external fun resetSession(sessionPtr: Long)
+
     /**
      * Release all native resources held by the session.
      * Must be called exactly once when the session is no longer needed.

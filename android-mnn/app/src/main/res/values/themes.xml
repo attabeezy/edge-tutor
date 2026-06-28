@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Window/Activity theme. Compose handles all in-app theming;
-         this only sets the system chrome (status bar, window background). -->
-    <style name="Theme.EdgeTutorMnn" parent="Theme.Material3.DayNight.NoActionBar" />
+    <style name="Theme.EdgeTutorMnn" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#2F7D4B</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#FFFFFF</item>
+    </style>
 </resources>

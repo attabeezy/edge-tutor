@@ -3,6 +3,8 @@ package com.edgetutor.mnn.llm
 class ThinkingTagFilter {
     private var suppressing = false
     private var carry = ""
+    private val captured = StringBuilder()
+    val thinkingText: String get() = captured.toString().trim()
 
     fun filter(delta: String): String {
         if (delta.isEmpty()) return ""
@@ -16,9 +18,12 @@ class ThinkingTagFilter {
             if (suppressing) {
                 val end = input.indexOf("</think>", cursor)
                 if (end < 0) {
-                    carry = input.takeLastPartialPrefixOf("</think>")
+                    val remainder = input.substring(cursor)
+                    carry = remainder.takeLastPartialPrefixOf("</think>")
+                    captured.append(remainder.dropLast(carry.length))
                     return out.toString()
                 }
+                captured.append(input.substring(cursor, end))
                 cursor = end + "</think>".length
                 suppressing = false
             } else {

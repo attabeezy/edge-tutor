@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("com.google.devtools.ksp")
-    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -33,7 +32,10 @@ android {
         }
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        viewBinding = true
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -60,15 +62,13 @@ android {
 }
 
 dependencies {
-    // Jetpack Compose BOM
-    val composeBom = platform("androidx.compose:compose-bom:2024.09.00")
-    implementation(composeBom)
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.activity:activity-compose:1.9.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.activity:activity-ktx:1.10.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.1")
+    implementation("androidx.recyclerview:recyclerview:1.4.0")
+    implementation("androidx.exifinterface:exifinterface:1.4.1")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("androidx.documentfile:documentfile:1.0.1")
 
     // Room — document metadata DB (same schema as android-ltk)

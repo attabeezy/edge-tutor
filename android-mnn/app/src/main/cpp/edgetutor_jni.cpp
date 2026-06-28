@@ -7,8 +7,11 @@
 #include <atomic>
 #include <unordered_map>
 #include <functional>
+#include <algorithm>
+#include <vector>
 
 #include "llm/llm.hpp"
+#include "MNN/expr/ExprCreator.hpp"
 
 #define TAG "EdgeTutorJNI"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
@@ -266,6 +269,135 @@ Java_com_edgetutor_mnn_llm_MnnNativeBridge_submitPrompt(JNIEnv* env, jclass /*cl
     return buildMetricsMap(env, prompt_len, decode_len, prefill_us, decode_us);
 }
 
+// Role-based generation. MNN applies the model's Jinja template to these
+// messages; callers must not pre-format ChatML.
+JNIEXPORT jobject JNICALL
+Java_com_edgetutor_mnn_llm_MnnNativeBridge_submitMessages(JNIEnv* env, jclass,
+                                                           jlong sessionPtr,
+                                                           jobjectArray jRoles,
+                                                           jobjectArray jContents,
+                                                           jobject progressListener) {
+    auto* llm = reinterpret_cast<Llm*>(sessionPtr);
+    if (!llm) return buildMetricsMap(env, 0, 0, 0, 0);
+    llm->reset();
+
+    std::vector<std::pair<std::string, std::string>> messages;
+    const jsize count = std::min(env->GetArrayLength(jRoles), env->GetArrayLength(jContents));
+    messages.reserve(static_cast<size_t>(count));
+    for (jsize i = 0; i < count; ++i) {
+        auto role = static_cast<jstring>(env->GetObjectArrayElement(jRoles, i));
+        auto content = static_cast<jstring>(env->GetObjectArrayElement(jContents, i));
+        const char* roleChars = env->GetStringUTFChars(role, nullptr);
+        const char* contentChars = env->GetStringUTFChars(content, nullptr);
+        messages.emplace_back(roleChars, contentChars);
+        env->ReleaseStringUTFChars(role, roleChars);
+        env->ReleaseStringUTFChars(content, contentChars);
+        env->DeleteLocalRef(role);
+        env->DeleteLocalRef(content);
+    }
+
+    jmethodID onProgress = nullptr;
+    if (progressListener) {
+        jclass listenerClass = env->GetObjectClass(progressListener);
+        onProgress = env->GetMethodID(listenerClass, "onProgress", "(Ljava/lang/String;)Z");
+        env->DeleteLocalRef(listenerClass);
+    }
+    KotlinCallbackBuf callback(env, progressListener, onProgress);
+    std::ostream output(&callback);
+    llm->response(messages, &output, "<eop>", 0);
+    restoreAndroidSteppingStatusIfNeeded(llm);
+    constexpr int MAX_NEW_TOKENS = 600;
+    int generated = 0;
+    while (!callback.isStopped() && !callback.isEop() && generated < MAX_NEW_TOKENS) {
+        llm->generate(1);
+        ++generated;
+        restoreAndroidSteppingStatusIfNeeded(llm);
+    }
+    callback.flushPending();
+    if (progressListener && onProgress) {
+        env->CallBooleanMethod(progressListener, onProgress, nullptr);
+    }
+    const LlmContext* ctx = llm->getContext();
+    return buildMetricsMap(
+        env,
+        ctx ? ctx->prompt_len : 0,
+        ctx ? ctx->gen_seq_len : 0,
+        ctx ? ctx->prefill_us : 0,
+        ctx ? ctx->decode_us : 0
+    );
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_edgetutor_mnn_llm_MnnNativeBridge_submitMessagesWithImage(
+        JNIEnv* env, jclass, jlong sessionPtr, jobjectArray jRoles,
+        jobjectArray jContents, jbyteArray jRgb, jint width, jint height,
+        jobject progressListener) {
+    auto* llm = reinterpret_cast<Llm*>(sessionPtr);
+    if (!llm || !jRgb || width <= 0 || height <= 0) {
+        return buildMetricsMap(env, 0, 0, 0, 0);
+    }
+    const jsize expected = width * height * 3;
+    if (env->GetArrayLength(jRgb) != expected) {
+        LOGE("Invalid RGB image size");
+        return buildMetricsMap(env, 0, 0, 0, 0);
+    }
+    llm->reset();
+    std::vector<std::pair<std::string, std::string>> messages;
+    const jsize count = std::min(env->GetArrayLength(jRoles), env->GetArrayLength(jContents));
+    for (jsize i = 0; i < count; ++i) {
+        auto role = static_cast<jstring>(env->GetObjectArrayElement(jRoles, i));
+        auto content = static_cast<jstring>(env->GetObjectArrayElement(jContents, i));
+        const char* roleChars = env->GetStringUTFChars(role, nullptr);
+        const char* contentChars = env->GetStringUTFChars(content, nullptr);
+        messages.emplace_back(roleChars, contentChars);
+        env->ReleaseStringUTFChars(role, roleChars);
+        env->ReleaseStringUTFChars(content, contentChars);
+        env->DeleteLocalRef(role);
+        env->DeleteLocalRef(content);
+    }
+
+    jbyte* rgb = env->GetByteArrayElements(jRgb, nullptr);
+    MultimodalPrompt prompt;
+    prompt.prompt_template = llm->apply_chat_template(messages);
+    PromptImagePart image;
+    image.width = width;
+    image.height = height;
+    image.image_data = MNN::Express::_Const(
+        reinterpret_cast<uint8_t*>(rgb),
+        {1, height, width, 3},
+        MNN::Express::NHWC,
+        halide_type_of<uint8_t>()
+    );
+    prompt.images["image_0"] = image;
+    env->ReleaseByteArrayElements(jRgb, rgb, JNI_ABORT);
+
+    jmethodID onProgress = nullptr;
+    if (progressListener) {
+        jclass listenerClass = env->GetObjectClass(progressListener);
+        onProgress = env->GetMethodID(listenerClass, "onProgress", "(Ljava/lang/String;)Z");
+        env->DeleteLocalRef(listenerClass);
+    }
+    KotlinCallbackBuf callback(env, progressListener, onProgress);
+    std::ostream output(&callback);
+    llm->response(prompt, &output, "<eop>", 0);
+    restoreAndroidSteppingStatusIfNeeded(llm);
+    constexpr int MAX_NEW_TOKENS = 600;
+    int generated = 0;
+    while (!callback.isStopped() && !callback.isEop() && generated < MAX_NEW_TOKENS) {
+        llm->generate(1);
+        ++generated;
+        restoreAndroidSteppingStatusIfNeeded(llm);
+    }
+    callback.flushPending();
+    if (progressListener && onProgress) env->CallBooleanMethod(progressListener, onProgress, nullptr);
+    prompt.images.clear(); // release the decoded tensor before returning to Kotlin
+    const LlmContext* ctx = llm->getContext();
+    return buildMetricsMap(
+        env, ctx ? ctx->prompt_len : 0, ctx ? ctx->gen_seq_len : 0,
+        ctx ? ctx->prefill_us : 0, ctx ? ctx->decode_us : 0
+    );
+}
+
 // MnnNativeBridge.releaseSession(sessionPtr: Long)
 JNIEXPORT void JNICALL
 Java_com_edgetutor_mnn_llm_MnnNativeBridge_releaseSession(JNIEnv* /*env*/, jclass /*cls*/,
@@ -275,6 +407,32 @@ Java_com_edgetutor_mnn_llm_MnnNativeBridge_releaseSession(JNIEnv* /*env*/, jclas
         LOGD("releaseSession: destroying ptr=%p", llm);
         Llm::destroy(llm);
     }
+}
+
+JNIEXPORT void JNICALL
+Java_com_edgetutor_mnn_llm_MnnNativeBridge_updateConfig(JNIEnv* env, jclass,
+                                                         jlong sessionPtr,
+                                                         jstring jConfig) {
+    auto* llm = reinterpret_cast<Llm*>(sessionPtr);
+    if (!llm || !jConfig) return;
+    const char* config = env->GetStringUTFChars(jConfig, nullptr);
+    llm->set_config(std::string(config));
+    env->ReleaseStringUTFChars(jConfig, config);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_edgetutor_mnn_llm_MnnNativeBridge_dumpConfig(JNIEnv* env, jclass,
+                                                       jlong sessionPtr) {
+    auto* llm = reinterpret_cast<Llm*>(sessionPtr);
+    if (!llm) return env->NewStringUTF("{}");
+    const std::string config = llm->dump_config();
+    return env->NewStringUTF(config.c_str());
+}
+
+JNIEXPORT void JNICALL
+Java_com_edgetutor_mnn_llm_MnnNativeBridge_resetSession(JNIEnv*, jclass, jlong sessionPtr) {
+    auto* llm = reinterpret_cast<Llm*>(sessionPtr);
+    if (llm) llm->reset();
 }
 
 } // extern "C"

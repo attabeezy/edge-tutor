@@ -38,7 +38,7 @@ class MnnBenchmark(private val context: Context) {
                     repeat(config.repeatCount) { index ->
                         var firstVisibleMs = -1L
                         val startNs = System.nanoTime()
-                        val output = engine.generate(prompt) { token ->
+                        val generation = engine.generateMeasured(prompt) { token ->
                             if (firstVisibleMs < 0 && token.isNotBlank()) {
                                 firstVisibleMs = EdgeTutorPerf.elapsedMs(startNs)
                             }
@@ -46,13 +46,13 @@ class MnnBenchmark(private val context: Context) {
                         results += MnnBenchmarkResult(
                             promptChars = chars,
                             repeatIndex = index + 1,
-                            nativePromptTokens = -1L,
-                            nativeDecodeTokens = -1L,
-                            nativePrefillUs = -1L,
-                            nativeDecodeUs = -1L,
+                            nativePromptTokens = generation.metrics.promptTokens,
+                            nativeDecodeTokens = generation.metrics.decodeTokens,
+                            nativePrefillUs = generation.metrics.prefillUs,
+                            nativeDecodeUs = generation.metrics.decodeUs,
                             visibleTtftMs = firstVisibleMs,
-                            totalMs = EdgeTutorPerf.elapsedMs(startNs),
-                            outputChars = output.length,
+                            totalMs = generation.metrics.totalMs,
+                            outputChars = generation.text.length,
                         )
                     }
                 }
@@ -85,9 +85,9 @@ class MnnBenchmark(private val context: Context) {
 fun List<MnnBenchmarkResult>.toCsv(): String {
     val rows = this
     return buildString {
-        appendLine("prompt_chars,repeat,visible_ttft_ms,total_ms,output_chars")
+        appendLine("prompt_chars,repeat,prompt_tokens,decode_tokens,prefill_us,decode_us,visible_ttft_ms,total_ms,output_chars")
         rows.forEach { r ->
-            appendLine("${r.promptChars},${r.repeatIndex},${r.visibleTtftMs},${r.totalMs},${r.outputChars}")
+            appendLine("${r.promptChars},${r.repeatIndex},${r.nativePromptTokens},${r.nativeDecodeTokens},${r.nativePrefillUs},${r.nativeDecodeUs},${r.visibleTtftMs},${r.totalMs},${r.outputChars}")
         }
     }
 }
@@ -97,10 +97,10 @@ fun List<MnnBenchmarkResult>.toMarkdown(): String {
     return buildString {
         appendLine("# Android MNN Benchmark")
         appendLine()
-        appendLine("| Prompt chars | Repeat | Visible TTFT ms | Total ms | Output chars |")
-        appendLine("|---:|---:|---:|---:|---:|")
+        appendLine("| Prompt chars | Repeat | Prompt tokens | Decode tokens | Prefill us | Decode us | Visible TTFT ms | Total ms | Output chars |")
+        appendLine("|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         rows.forEach { r ->
-            appendLine("| ${r.promptChars} | ${r.repeatIndex} | ${r.visibleTtftMs} | ${r.totalMs} | ${r.outputChars} |")
+            appendLine("| ${r.promptChars} | ${r.repeatIndex} | ${r.nativePromptTokens} | ${r.nativeDecodeTokens} | ${r.nativePrefillUs} | ${r.nativeDecodeUs} | ${r.visibleTtftMs} | ${r.totalMs} | ${r.outputChars} |")
         }
     }
 }

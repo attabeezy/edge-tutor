@@ -7,6 +7,8 @@ import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.edgetutor.mnn.data.db.DocumentEntity
+import com.edgetutor.mnn.data.db.AppDatabase
+import com.edgetutor.mnn.data.db.MessageEntity
 import com.edgetutor.mnn.ingestion.Embedder
 import com.edgetutor.mnn.llm.LlmEngine
 import com.edgetutor.mnn.llm.MnnEngine
@@ -15,6 +17,8 @@ import com.edgetutor.mnn.llm.ModelReadinessKind
 import com.edgetutor.mnn.llm.ModelReadinessState
 import com.edgetutor.mnn.llm.PromptSanitizer
 import com.edgetutor.mnn.perf.EdgeTutorPerf
+import com.edgetutor.mnn.perf.EdgeTutorValidationSuite
+import com.edgetutor.mnn.perf.ValidationResult
 import com.edgetutor.mnn.store.FlatIndex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +35,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
+import com.google.gson.Gson
 import kotlin.math.ceil
 
 data class ChatMessage(
@@ -38,6 +43,28 @@ data class ChatMessage(
     val text: String,
     /** Short excerpts of the retrieved chunks — shown as source attribution. */
     val sources: List<String> = emptyList(),
+    val id: Long = System.nanoTime(),
+    val thinking: String? = null,
+    val imagePath: String? = null,
+    val metricsText: String? = null,
+    val completionState: String = "complete",
+)
+
+data class QueryExecutionResult(
+    val policyId: String,
+    val question: String,
+    val answer: String,
+    val sources: List<String>,
+    val promptChars: Int,
+    val promptTokens: Long,
+    val prefillUs: Long,
+    val decodeUs: Long,
+    val visibleTtftMs: Long,
+    val totalMs: Long,
+    val availableMemoryMb: Long,
+    val route: QueryRoute,
+    val routeReason: String,
+    val maxSimilarity: Float,
 )
 
 enum class Role { USER, ASSISTANT }
@@ -59,6 +86,8 @@ sealed class ThinkingUiState {
  * identical so device measurements are directly comparable.
  */
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
+    private val db = AppDatabase.get(app)
+    private val gson = Gson()
 
     private val mnnEngine: MnnEngine by lazy { MnnEngine(app) }
     // ► Swap MnnEngine for any other LlmEngine implementation here.
@@ -84,6 +113,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _messages    = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages
+    private val _isGenerating = MutableStateFlow(false)
+    val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
+    private val _pendingImagePath = MutableStateFlow<String?>(null)
+    val pendingImagePath: StateFlow<String?> = _pendingImagePath.asStateFlow()
+    private var generationJob: Job? = null
 
     private val _thinkingUiState = MutableStateFlow<ThinkingUiState>(ThinkingUiState.Idle)
     val thinkingUiState: StateFlow<ThinkingUiState> = _thinkingUiState.asStateFlow()
@@ -103,12 +137,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _activeDocumentId = MutableStateFlow<Long?>(null)
     val activeDocumentId: StateFlow<Long?> = _activeDocumentId.asStateFlow()
 
+    private val _validationStatus = MutableStateFlow<String?>(null)
+    val validationStatus: StateFlow<String?> = _validationStatus.asStateFlow()
+    private var lastQueryResult: QueryExecutionResult? = null
+
     companion object {
         private const val LOW_MEM_THRESHOLD_MB        = 200L
         private const val EMBEDDER_CLOSE_DELAY_MS     = 30_000L
         private const val RETRIEVAL_CANDIDATE_K       = 5
-        private const val MAX_KEPT_CONTEXT_CHUNKS     = 2
-        private const val MAX_CONTEXT_CHARS_PER_CHUNK = 800
         private const val MAX_FOLLOWUP_CONTEXT_CHARS  = 180
         private const val MAX_ANSWER_CONTEXT_CHARS    = 250
 
@@ -138,6 +174,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     private var embedder: Embedder? = null
     private var embedderCloseJob: Job? = null
+    @Volatile private var promptBudgetPolicy: PromptBudgetPolicy = PromptBudgetPolicy.DEFAULT
+
+    fun setPromptBudgetPolicy(policy: PromptBudgetPolicy) {
+        promptBudgetPolicy = policy
+    }
 
     private fun getAvailableMemoryMB(): Long {
         val am = getApplication<Application>().getSystemService(Application.ACTIVITY_SERVICE) as ActivityManager
@@ -168,7 +209,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 activeDoc = doc
                 _activeDocumentId.value = doc.id
                 _isLikelyScanned.value = doc.isLikelyScanned
-                _messages.value = emptyList()
+                _messages.value = db.messageDao().getForDocument(doc.id).map(::toChatMessage)
 
                 embedderCloseJob?.cancel()
                 embedderCloseJob = null
@@ -204,6 +245,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearError() { _errorMessage.value = null }
+    fun reportError(message: String) { _errorMessage.value = message }
+    fun setPendingImage(path: String?) { _pendingImagePath.value = path }
+    fun stopGeneration() {
+        mnnEngine.cancel()
+        generationJob?.cancel()
+    }
 
     fun refreshModelReadiness() {
         _modelReadiness.value = MnnModelManager.validate(getApplication())
@@ -237,15 +284,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     // Querying
     // -------------------------------------------------------------------------
 
-    fun ask(question: String) {
-        val idx = index ?: return
-        if (_isWarmingUp.value) return
+    fun ask(question: String): Job? {
+        val idx = index ?: return null
+        val imagePath = _pendingImagePath.value
+        val effectiveQuestion = question.ifBlank {
+            if (imagePath != null) "Explain the problem or diagram shown in this image." else return null
+        }
+        if (_isWarmingUp.value) return null
+        if (_isGenerating.value) return null
         if (!_modelReadiness.value.isReady) {
             _errorMessage.value = "Import the MNN model before asking questions."
-            return
+            return null
         }
 
-        viewModelScope.launch(Dispatchers.IO) {
+        _pendingImagePath.value = null
+        val job = viewModelScope.launch(Dispatchers.IO) {
+            _isGenerating.value = true
+            generationJob = coroutineContext[Job]
             embedderCloseJob?.cancel()
             embedderCloseJob = null
 
@@ -253,13 +308,26 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val queryStartNs    = System.nanoTime()
             val docId           = activeDoc?.id ?: -1L
             var shouldPersistThinkingDuration = false
+            var activeRouteDecision: QueryRouteDecision? = null
             _thinkingUiState.value = ThinkingUiState.Active
             val priorMessages = _messages.value
-            _messages.value  += ChatMessage(Role.USER, question)
+            lastQueryResult = null
+            val user = ChatMessage(Role.USER, effectiveQuestion, imagePath = imagePath)
+            _messages.value += user
+            val userId = db.messageDao().insert(
+                MessageEntity(
+                    documentId = docId,
+                    role = Role.USER.name,
+                    text = effectiveQuestion,
+                    imagePath = imagePath,
+                    thinkingEnabled = false,
+                )
+            )
+            _messages.value = _messages.value.dropLast(1) + user.copy(id = userId)
             try {
                 val app = getApplication<Application>()
-                val retrievalQuestion = buildRetrievalQuestion(question, priorMessages)
-                val conversationContext = if (isFollowUpQuestion(question)) {
+                val retrievalQuestion = buildRetrievalQuestion(effectiveQuestion, priorMessages)
+                val conversationContext = if (isFollowUpQuestion(effectiveQuestion)) {
                     buildConversationContext(priorMessages)
                 } else {
                     ""
@@ -301,29 +369,47 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
                 // 3. Select context and build prompt.
                 val promptBuildStartNs = System.nanoTime()
-                val contextSelection = selectContext(searchResults)
-                val sanitizedQuestion = PromptSanitizer.sanitize(question)
+                val contextSelection = selectContext(searchResults, promptBudgetPolicy)
+                val sanitizedQuestion = PromptSanitizer.sanitize(effectiveQuestion)
                 val rawContextText    = contextSelection.keptChunks.joinToString("\n\n") { (_, chunk) -> chunk }
                 val sanitizedContext  = PromptSanitizer.sanitize(rawContextText)
-                val prompt = buildGroundedPrompt(
-                    passages             = sanitizedContext.value,
-                    conversationContext  = PromptSanitizer.sanitize(conversationContext).value,
-                    question             = sanitizedQuestion.value,
-                    wantsWorkedExample   = wantsWorkedExample(question),
+                val isFollowUp = isFollowUpQuestion(effectiveQuestion)
+                val previousAnswerWasGrounded = priorMessages
+                    .lastOrNull { it.role == Role.ASSISTANT }
+                    ?.sources
+                    ?.isNotEmpty()
+                val routeDecision = QueryRoutingPolicy.inheritFollowUp(
+                    isFollowUp = isFollowUp,
+                    previousAnswerWasGrounded = previousAnswerWasGrounded,
+                    maxSimilarity = contextSelection.keptScores.firstOrNull(),
                 )
+                activeRouteDecision = routeDecision
+                val isDocumentSupported = routeDecision.route == QueryRoute.GROUNDED
+                val prompt = if (isDocumentSupported) {
+                    buildGroundedPrompt(
+                        passages             = sanitizedContext.value,
+                        conversationContext  = PromptSanitizer.sanitize(conversationContext).value,
+                        question             = sanitizedQuestion.value,
+                        wantsWorkedExample   = wantsWorkedExample(effectiveQuestion),
+                    )
+                } else {
+                    buildGeneralPrompt(sanitizedQuestion.value)
+                }
                 val sanitizedPrompt = PromptSanitizer.sanitize(prompt)
                 val promptBuildMs   = EdgeTutorPerf.elapsedMs(promptBuildStartNs)
                 EdgeTutorPerf.log("query_stage_timing", "doc_id" to docId, "prompt_build_ms" to promptBuildMs)
                 EdgeTutorPerf.log(
                     "query_route",
                     "doc_id"       to docId,
-                    "query_route"  to "GROUNDED",
-                    "route_reason" to "retrieved_context",
+                    "query_route"  to routeDecision.route.name,
+                    "route_reason" to routeDecision.reason,
                     "max_sim"      to contextSelection.maxSimilarity,
+                    "route_threshold" to QueryRoutingPolicy.MIN_GROUNDED_COSINE_SIMILARITY,
                 )
                 EdgeTutorPerf.log(
                     "prompt_metrics",
                     "doc_id"                    to docId,
+                    "prompt_policy"             to promptBudgetPolicy.id,
                     "retrieved_k"               to contextSelection.retrievedCount,
                     "kept_k"                    to contextSelection.keptChunks.size,
                     "max_sim"                   to contextSelection.maxSimilarity,
@@ -333,19 +419,37 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     "final_context_chars"       to contextSelection.finalContextChars,
                     "prompt_chars"              to sanitizedPrompt.value.length,
                     "estimated_prompt_tokens"   to estimatePromptTokens(sanitizedPrompt.value),
-                    "query_route"               to "GROUNDED",
+                    "query_route"               to routeDecision.route.name,
+                    "route_reason"              to routeDecision.reason,
+                    "route_threshold"           to QueryRoutingPolicy.MIN_GROUNDED_COSINE_SIMILARITY,
                 )
 
                 // 4. Add placeholder ASSISTANT message; stream tokens into it.
                 _messages.value += ChatMessage(
                     role    = Role.ASSISTANT,
                     text    = "",
-                    sources = contextSelection.keptChunks.map { (_, chunk) -> chunk.take(120) + "." },
+                    sources = if (isDocumentSupported) {
+                        contextSelection.keptChunks.map { (_, chunk) -> chunk.take(120) + "." }
+                    } else {
+                        emptyList()
+                    },
                 )
+                val assistantId = db.messageDao().insert(
+                    MessageEntity(
+                        documentId = docId,
+                        role = Role.ASSISTANT.name,
+                        text = "",
+                        sourcesJson = gson.toJson(_messages.value.last().sources),
+                        completionState = "streaming",
+                        thinkingEnabled = false,
+                    )
+                )
+                _messages.value = _messages.value.dropLast(1) + _messages.value.last().copy(id = assistantId)
 
                 val tokenBuf = StringBuilder()
                 var firstTokenFlushed = false
                 var uiVisibleTtftLogged = false
+                var uiVisibleTtftMs = -1L
                 fun flushAssistantChunk(chunk: String, source: String) {
                     if (chunk.isEmpty()) return
                     val list = _messages.value.toMutableList()
@@ -355,6 +459,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     _messages.value = list
                     if (!uiVisibleTtftLogged && updatedText.isNotBlank()) {
                         uiVisibleTtftLogged = true
+                        uiVisibleTtftMs = EdgeTutorPerf.elapsedMs(queryStartNs)
                         EdgeTutorPerf.log(
                             "query_stage_timing",
                             "doc_id"             to docId,
@@ -383,11 +488,20 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 try {
-                    llm.generate(sanitizedPrompt.value) { token ->
+                    mnnEngine.enforceThinkingDisabled()
+                    val inferencePrompt = if (imagePath != null) {
+                        "${sanitizedPrompt.value}\n<img>$imagePath</img>"
+                    } else sanitizedPrompt.value
+                    val generation = llm.generateMeasured(inferencePrompt) { token ->
                         val immediateChunk = synchronized(tokenBuf) {
                             if (!firstTokenFlushed && token.isNotBlank()) {
                                 firstTokenFlushed = true
-                                val chunk = tokenBuf.toString() + token
+                                val prefix = if (isDocumentSupported) {
+                                    ""
+                                } else {
+                                    AnswerAttributionPolicy.GENERAL_ANSWER_PREFIX + " "
+                                }
+                                val chunk = prefix + tokenBuf.toString() + token
                                 tokenBuf.clear()
                                 chunk
                             } else {
@@ -399,6 +513,79 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                             flushAssistantChunk(immediateChunk, "first_token_flush")
                         }
                     }
+                    if (!isDocumentSupported ||
+                        AnswerAttributionPolicy.isGeneralKnowledgeAnswer(generation.text)
+                    ) {
+                        val list = _messages.value.toMutableList()
+                        val last = list.lastOrNull()
+                        if (last?.role == Role.ASSISTANT) {
+                            list[list.lastIndex] = last.copy(sources = emptyList())
+                            _messages.value = list
+                        }
+                    }
+                    val assistant = _messages.value.lastOrNull { it.role == Role.ASSISTANT }
+                    if (assistant != null && generation.thinking.isNotBlank()) {
+                        _messages.value = _messages.value.dropLast(1) +
+                            _messages.value.last().copy(thinking = generation.thinking)
+                    }
+                    lastQueryResult = QueryExecutionResult(
+                        policyId = promptBudgetPolicy.id,
+                        question = effectiveQuestion,
+                        answer = if (isDocumentSupported) {
+                            generation.text
+                        } else {
+                            "${AnswerAttributionPolicy.GENERAL_ANSWER_PREFIX} ${generation.text}"
+                        },
+                        sources = assistant?.sources.orEmpty(),
+                        promptChars = sanitizedPrompt.value.length,
+                        promptTokens = generation.metrics.promptTokens,
+                        prefillUs = generation.metrics.prefillUs,
+                        decodeUs = generation.metrics.decodeUs,
+                        visibleTtftMs = uiVisibleTtftMs,
+                        totalMs = EdgeTutorPerf.elapsedMs(queryStartNs),
+                        availableMemoryMb = getAvailableMemoryMB(),
+                        route = routeDecision.route,
+                        routeReason = routeDecision.reason,
+                        maxSimilarity = routeDecision.maxSimilarity,
+                    )
+                    EdgeTutorPerf.log(
+                        "query_complete",
+                        "doc_id" to docId,
+                        "query_route" to routeDecision.route.name,
+                        "route_reason" to routeDecision.reason,
+                        "max_sim" to routeDecision.maxSimilarity,
+                        "ui_visible_ttft_ms" to uiVisibleTtftMs,
+                        "total_answer_ms" to EdgeTutorPerf.elapsedMs(queryStartNs),
+                        "prompt_tokens" to generation.metrics.promptTokens,
+                        "decode_tokens" to generation.metrics.decodeTokens,
+                        "answer_chars" to generation.text.length,
+                        "blank_visible_answer" to generation.text.isBlank(),
+                    )
+                    val completed = _messages.value.last()
+                    db.messageDao().update(
+                        MessageEntity(
+                            id = assistantId,
+                            documentId = docId,
+                            role = Role.ASSISTANT.name,
+                            text = completed.text,
+                            thinking = completed.thinking,
+                            sourcesJson = gson.toJson(completed.sources),
+                            completionState = "complete",
+                            thinkingEnabled = false,
+                            promptTokens = generation.metrics.promptTokens,
+                            answerTokens = generation.metrics.decodeTokens,
+                            prefillUs = generation.metrics.prefillUs,
+                            decodeUs = generation.metrics.decodeUs,
+                            ttftMs = uiVisibleTtftMs,
+                        )
+                    )
+                    val metricsText =
+                        "${generation.metrics.promptTokens} prompt · ${generation.metrics.decodeTokens} answer · TTFT ${uiVisibleTtftMs} ms"
+                    _messages.value = _messages.value.dropLast(1) +
+                        _messages.value.last().copy(
+                            completionState = "complete",
+                            metricsText = metricsText,
+                        )
                 } finally {
                     flushJob?.cancel()
                     flushJob = null
@@ -430,8 +617,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                EdgeTutorPerf.log(
+                    "query_failed",
+                    "doc_id" to docId,
+                    "query_route" to (activeRouteDecision?.route?.name ?: "UNDECIDED"),
+                    "route_reason" to (activeRouteDecision?.reason ?: "not_available"),
+                    "elapsed_ms" to EdgeTutorPerf.elapsedMs(queryStartNs),
+                    "error_type" to e.javaClass.simpleName,
+                    "error_message" to (e.message ?: ""),
+                )
                 _errorMessage.value = "Query failed: ${e.message}"
             } finally {
+                _isGenerating.value = false
+                generationJob = null
                 _thinkingUiState.value =
                     if (shouldPersistThinkingDuration)
                         ThinkingUiState.Done(SystemClock.elapsedRealtime() - thinkingStartMs)
@@ -439,29 +637,174 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         ThinkingUiState.Idle
             }
         }
+        generationJob = job
+        return job
     }
 
-    fun resetHistory() {
+    fun runValidationSuite() {
+        if (_validationStatus.value?.startsWith("running") == true) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val results = mutableListOf<ValidationResult>()
+            _validationStatus.value = "running 0/${EdgeTutorValidationSuite.cases.size}"
+            EdgeTutorPerf.log("validation_suite_start", "cases" to EdgeTutorValidationSuite.cases.size)
+            try {
+                for ((index, case) in EdgeTutorValidationSuite.cases.withIndex()) {
+                    resetHistory()
+                    case.setupQuestion?.let { setup ->
+                        ask(setup)?.join()
+                        if (lastQueryResult == null) error("Setup query failed for ${case.id}")
+                    }
+                    ask(case.question)?.join()
+                    val query = lastQueryResult ?: error("Query failed for ${case.id}")
+                    results += ValidationResult(
+                        caseId = case.id,
+                        category = case.category,
+                        policyId = query.policyId,
+                        question = case.question,
+                        answer = query.answer,
+                        sources = query.sources,
+                        promptChars = query.promptChars,
+                        promptTokens = query.promptTokens,
+                        prefillUs = query.prefillUs,
+                        decodeUs = query.decodeUs,
+                        visibleTtftMs = query.visibleTtftMs,
+                        totalMs = query.totalMs,
+                        availableMemoryMb = query.availableMemoryMb,
+                        route = query.route,
+                        routeReason = query.routeReason,
+                        maxSimilarity = query.maxSimilarity,
+                    )
+                    _validationStatus.value = "running ${index + 1}/${EdgeTutorValidationSuite.cases.size}"
+                    EdgeTutorPerf.log(
+                        "validation_suite_progress",
+                        "completed" to (index + 1),
+                        "total" to EdgeTutorValidationSuite.cases.size,
+                        "case_id" to case.id,
+                    )
+                }
+                val outputDir = File(
+                    getApplication<Application>().getExternalFilesDir(null),
+                    "reports",
+                )
+                EdgeTutorValidationSuite.writeReports(outputDir, results)
+                _validationStatus.value = "complete: ${outputDir.absolutePath}"
+                EdgeTutorPerf.log(
+                    "validation_suite_complete",
+                    "cases" to results.size,
+                    "output_dir" to outputDir.absolutePath,
+                )
+            } catch (e: Exception) {
+                _validationStatus.value = "failed: ${e.message}"
+                EdgeTutorPerf.log(
+                    "validation_suite_failed",
+                    "completed" to results.size,
+                    "error_type" to e.javaClass.simpleName,
+                    "error_message" to (e.message ?: ""),
+                )
+            } finally {
+                resetHistory()
+            }
+        }
+    }
+
+    fun runPromptPolicyBenchmark() {
+        if (_validationStatus.value?.startsWith("running") == true) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val questions = EdgeTutorValidationSuite.cases
+                .filter { it.category == com.edgetutor.mnn.perf.ValidationCategory.GROUNDED }
+            val total = PromptBudgetPolicy.BENCHMARK_POLICIES.size * questions.size * 3
+            val results = mutableListOf<ValidationResult>()
+            var completed = 0
+            _validationStatus.value = "running benchmark 0/$total"
+            try {
+                for (policy in PromptBudgetPolicy.BENCHMARK_POLICIES) {
+                    setPromptBudgetPolicy(policy)
+                    for (case in questions) {
+                        repeat(3) { repeatIndex ->
+                            resetHistory()
+                            ask(case.question)?.join()
+                            val query = lastQueryResult ?: error("Query failed for ${case.id}")
+                            results += ValidationResult(
+                                caseId = "${case.id}-r${repeatIndex + 1}",
+                                category = case.category,
+                                policyId = query.policyId,
+                                question = case.question,
+                                answer = query.answer,
+                                sources = query.sources,
+                                promptChars = query.promptChars,
+                                promptTokens = query.promptTokens,
+                                prefillUs = query.prefillUs,
+                                decodeUs = query.decodeUs,
+                                visibleTtftMs = query.visibleTtftMs,
+                                totalMs = query.totalMs,
+                                availableMemoryMb = query.availableMemoryMb,
+                                route = query.route,
+                                routeReason = query.routeReason,
+                                maxSimilarity = query.maxSimilarity,
+                            )
+                            completed++
+                            _validationStatus.value = "running benchmark $completed/$total"
+                        }
+                    }
+                }
+                val outputDir = File(
+                    getApplication<Application>().getExternalFilesDir(null),
+                    "reports/prompt-benchmark",
+                )
+                EdgeTutorValidationSuite.writeReports(outputDir, results)
+                _validationStatus.value = "benchmark complete: ${outputDir.absolutePath}"
+            } catch (e: Exception) {
+                _validationStatus.value = "benchmark failed: ${e.message}"
+            } finally {
+                setPromptBudgetPolicy(PromptBudgetPolicy.DEFAULT)
+                resetHistory()
+            }
+        }
+    }
+
+    private suspend fun resetHistory() {
+        // submitMessages() also resets natively before every generation. Keep an
+        // explicit boundary here so validation cases remain isolated if the
+        // native submission policy changes later.
+        mnnEngine.reset()
         _messages.value = emptyList()
         _thinkingUiState.value = ThinkingUiState.Idle
     }
+
+    private fun toChatMessage(entity: MessageEntity): ChatMessage = ChatMessage(
+        role = Role.valueOf(entity.role),
+        text = entity.text,
+        sources = runCatching {
+            gson.fromJson(entity.sourcesJson, Array<String>::class.java).toList()
+        }.getOrDefault(emptyList()),
+        id = entity.id,
+        thinking = entity.thinking,
+        imagePath = entity.imagePath,
+        completionState = entity.completionState,
+        metricsText = if (entity.promptTokens > 0 || entity.answerTokens > 0) {
+            "${entity.promptTokens} prompt · ${entity.answerTokens} answer · TTFT ${entity.ttftMs} ms"
+        } else null,
+    )
 
     // -------------------------------------------------------------------------
     // Query routing and context budgeting
     // -------------------------------------------------------------------------
 
-    private fun selectContext(results: List<Pair<FlatIndex.Entry, Float>>): ContextSelection {
+    private fun selectContext(
+        results: List<Pair<FlatIndex.Entry, Float>>,
+        policy: PromptBudgetPolicy,
+    ): ContextSelection {
         val sortedResults = results.sortedByDescending { (_, sim) -> sim }
-        val keptCandidates = sortedResults.take(MAX_KEPT_CONTEXT_CHUNKS)
+        val keptCandidates = sortedResults.take(policy.maxKeptChunks)
 
         val keptEntries = keptCandidates.mapIndexed { index, (entry, _) ->
-            entry to "${index + 1}. ${entry.text.take(MAX_CONTEXT_CHARS_PER_CHUNK)}"
+            entry to "${index + 1}. ${entry.text.take(policy.maxCharsPerChunk)}"
         }
         val keptIds     = keptCandidates.map { (entry, _) -> entry.id }.toSet()
         val keptScores  = keptCandidates.map { (_, sim) -> sim }
         val droppedScores = sortedResults
             .filterIndexed { index, (entry, _) ->
-                index >= MAX_KEPT_CONTEXT_CHUNKS || entry.id !in keptIds
+                index >= policy.maxKeptChunks || entry.id !in keptIds
             }
             .map { (_, sim) -> sim }
 
@@ -471,7 +814,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             keptScores        = keptScores,
             droppedScores     = droppedScores,
             maxSimilarity     = sortedResults.firstOrNull()?.second ?: 0f,
-            contextCharCap    = MAX_CONTEXT_CHARS_PER_CHUNK,
+            contextCharCap    = policy.maxCharsPerChunk,
             finalContextChars = keptEntries.sumOf { (_, chunk) -> chunk.length },
         )
     }
@@ -553,11 +896,17 @@ ${answerInstruction(wantsWorkedExample)}
 Question: $question
 """.trimIndent()
 
+    private fun buildGeneralPrompt(question: String): String =
+        "Answer this question from general knowledge. Be concise and factual. " +
+            "Use Markdown and enclose every math expression in \$...\$ or \$\$...\$\$.\nQuestion: $question"
+
     private fun answerInstruction(wantsWorkedExample: Boolean): String =
         if (wantsWorkedExample) {
-            "Give a small worked example. Show the derivative, integrate it back, and check the result. Do not reply with only a constant or equation."
+            "Use the passages. Give a small worked example. Show the derivative, integrate it back, and check the result. " +
+                "Use Markdown and enclose every math expression in \$...\$ or \$\$...\$\$."
         } else {
-            "Answer using these passages. Be direct and explain the relationship, not a loose scenario."
+            "Answer using the passages. Be direct and explain the relationship. " +
+                "Use Markdown and enclose every math expression in \$...\$ or \$\$...\$\$."
         }
 
     // -------------------------------------------------------------------------

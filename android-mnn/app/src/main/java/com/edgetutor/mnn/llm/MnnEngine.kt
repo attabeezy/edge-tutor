@@ -2,6 +2,7 @@ package com.edgetutor.mnn.llm
 
 import android.content.Context
 import android.util.Log
+import android.graphics.BitmapFactory
 import com.edgetutor.mnn.perf.EdgeTutorPerf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -9,7 +10,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
-import org.json.JSONObject
 
 /**
  * LLM engine backed by MNN-LLM via the pre-built libMNN_LLM.so.
@@ -52,10 +52,11 @@ import org.json.JSONObject
  * Only one native generation runs at a time — enforced by [genMutex].
  * All native calls are dispatched on Dispatchers.IO.
  */
-class MnnEngine(private val context: Context) : LlmEngine {
+class MnnEngine(private val context: Context) : LlmEngine, ChatSessionEngine {
 
     private val modelLoaded   = AtomicBoolean(false)
     private val warmUpDone    = AtomicBoolean(false)
+    private val cancelRequested = AtomicBoolean(false)
     private val copyMutex     = Mutex()
     /** Serializes native session initialization so warm-up/generation can await it. */
     private val initMutex     = Mutex()
@@ -79,11 +80,8 @@ class MnnEngine(private val context: Context) : LlmEngine {
          * tutor we want direct, concise answers so we disable thinking here.
          * The native layer merges this over the model's own config.json.
          */
-        private val SESSION_CONFIG_JSON: String = JSONObject()
-            .put("jinja", JSONObject()
-                .put("context", JSONObject()
-                    .put("enable_thinking", false)))
-            .toString()
+        private val SESSION_CONFIG_JSON: String
+            get() = MnnThinkingPolicy.disabledConfigJson
 
         /**
          * Qwen3.5 + ChatML stop sequences.
@@ -148,6 +146,7 @@ class MnnEngine(private val context: Context) : LlmEngine {
                     throw IllegalStateException("MNN initSession returned null pointer — check logcat for native errors.")
                 }
                 sessionPtr = ptr
+                enforceThinkingDisabled(ptr)
                 modelLoaded.set(true)
                 EdgeTutorPerf.log(
                     "llm_native_init",
@@ -166,7 +165,7 @@ class MnnEngine(private val context: Context) : LlmEngine {
                 ensureSessionReady()
                 if (warmUpDone.get()) return@withContext
                 generateInternal(
-                    prompt      = buildChatPrompt(WARM_UP_PROMPT),
+                    prompt      = WARM_UP_PROMPT,
                     source      = "warm_up",
                     logMetrics  = true,
                     onToken     = {},
@@ -176,13 +175,17 @@ class MnnEngine(private val context: Context) : LlmEngine {
         }
     }
 
-    override suspend fun generate(prompt: String, onToken: (String) -> Unit): String =
+    override suspend fun generateMeasured(
+        prompt: String,
+        onToken: (String) -> Unit,
+    ): GenerationResult =
         withGenerateLock("query") {
+            cancelRequested.set(false)
             initNativeModel()
             withContext(Dispatchers.IO) {
                 ensureSessionReady()
                 generateInternal(
-                    prompt     = buildChatPrompt(prompt),
+                    prompt     = prompt,
                     source     = "query",
                     logMetrics = true,
                     onToken    = onToken,
@@ -205,6 +208,59 @@ class MnnEngine(private val context: Context) : LlmEngine {
         }
     }
 
+    override fun cancel() {
+        cancelRequested.set(true)
+    }
+
+    override suspend fun load() = initNativeModel()
+
+    override suspend fun reset() = withContext(Dispatchers.IO) {
+        val ptr = sessionPtr
+        if (ptr != 0L) MnnNativeBridge.resetSession(ptr)
+    }
+
+    override suspend fun generate(
+        messages: List<ChatRoleMessage>,
+        thinkingEnabled: Boolean,
+        onChunk: (GenerationChunk) -> Boolean,
+    ): ChatGenerationResult {
+        enforceThinkingDisabled(sessionPtr)
+        val prompt = messages.joinToString("\n") { message ->
+            message.content.joinToString("\n") {
+                when (it) {
+                    is ChatContentPart.Text -> it.value
+                    is ChatContentPart.Image -> "<img>${it.localPath}</img>"
+                }
+            }
+        }
+        val result = generateMeasured(prompt) { onChunk(GenerationChunk(answerDelta = it)) }
+        return ChatGenerationResult(
+            answer = result.text,
+            thinking = result.thinking,
+            reason = if (cancelRequested.get()) CompletionReason.CANCELLED else CompletionReason.EOP,
+            metrics = result.metrics,
+        )
+    }
+
+    fun enforceThinkingDisabled() {
+        val ptr = sessionPtr
+        if (ptr != 0L) enforceThinkingDisabled(ptr)
+    }
+
+    private fun enforceThinkingDisabled(ptr: Long) {
+        MnnNativeBridge.updateConfig(ptr, SESSION_CONFIG_JSON)
+        val effective = MnnNativeBridge.dumpConfig(ptr)
+        check(MnnThinkingPolicy.isDisabled(effective)) {
+            "MNN effective config does not verify enable_thinking=false"
+        }
+        EdgeTutorPerf.log(
+            "llm_thinking_config",
+            "enable_thinking" to false,
+            "verified" to true,
+        )
+        Log.d(TAG, "Verified effective config enable_thinking=false")
+    }
+
     // -------------------------------------------------------------------------
     // Internal generation
     // -------------------------------------------------------------------------
@@ -220,12 +276,13 @@ class MnnEngine(private val context: Context) : LlmEngine {
         source: String,
         logMetrics: Boolean,
         onToken: (String) -> Unit,
-    ): String {
+    ): GenerationResult {
         val sb      = StringBuilder()
         var stopped = false
         val thinkingFilter = ThinkingTagFilter()
         val startNs = System.nanoTime()
         var firstTokenLogged = false
+        var visibleTtftMs = -1L
         val safePrompt = PromptSanitizer.sanitize(prompt)
         if (safePrompt.changed) {
             EdgeTutorPerf.log(
@@ -237,11 +294,8 @@ class MnnEngine(private val context: Context) : LlmEngine {
             )
         }
 
-        val metrics = MnnNativeBridge.submitPrompt(
-            sessionPtr = sessionPtr,
-            prompt     = safePrompt.value,
-            keepHistory = false,   // single-turn; multi-turn via prompt construction
-            progressListener = MnnProgressListener { rawToken ->
+        val listener = MnnProgressListener { rawToken ->
+                if (cancelRequested.get()) stopped = true
                 if (stopped || rawToken == null) return@MnnProgressListener stopped
                 val safeDelta = PromptSanitizer.sanitize(rawToken)
                 val delta = thinkingFilter.filter(safeDelta.value)
@@ -249,6 +303,7 @@ class MnnEngine(private val context: Context) : LlmEngine {
 
                 if (logMetrics && !firstTokenLogged) {
                     firstTokenLogged = true
+                    visibleTtftMs = EdgeTutorPerf.elapsedMs(startNs)
                     EdgeTutorPerf.log(
                         "llm_decode_first_token",
                         "source"           to source,
@@ -275,7 +330,31 @@ class MnnEngine(private val context: Context) : LlmEngine {
                 }
                 stopped   // return true to stop native generation when we hit a stop sequence
             }
-        )
+        val imageMatch = Regex("<img>([^<]+)</img>").find(safePrompt.value)
+        val roles = arrayOf("system", "user")
+        val contents = arrayOf(SYSTEM_PROMPT, safePrompt.value.replace(Regex("<img>[^<]+</img>"), "<img>image_0</img>"))
+        val metrics = if (imageMatch != null) {
+            val path = imageMatch.groupValues[1]
+            val bitmap = BitmapFactory.decodeFile(path)
+                ?: throw IllegalArgumentException("Vision input could not be decoded.")
+            try {
+                val pixels = IntArray(bitmap.width * bitmap.height)
+                bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                val rgb = ByteArray(pixels.size * 3)
+                pixels.forEachIndexed { index, color ->
+                    rgb[index * 3] = (color shr 16).toByte()
+                    rgb[index * 3 + 1] = (color shr 8).toByte()
+                    rgb[index * 3 + 2] = color.toByte()
+                }
+                MnnNativeBridge.submitMessagesWithImage(
+                    sessionPtr, roles, contents, rgb, bitmap.width, bitmap.height, listener,
+                )
+            } finally {
+                bitmap.recycle()
+            }
+        } else {
+            MnnNativeBridge.submitMessages(sessionPtr, roles, contents, listener)
+        }
 
         if (logMetrics) {
             EdgeTutorPerf.log(
@@ -289,7 +368,7 @@ class MnnEngine(private val context: Context) : LlmEngine {
             )
         }
 
-        return if (stopped) {
+        val text = if (stopped) {
             val tailStart = maxOf(0, sb.length - MAX_STOP_SEQ_LEN)
             val tail      = sb.substring(tailStart)
             val seqIdx    = STOP_SEQUENCES
@@ -299,12 +378,32 @@ class MnnEngine(private val context: Context) : LlmEngine {
         } else {
             sb.toString()
         }
+        EdgeTutorPerf.log(
+            "llm_generation_result",
+            "source" to source,
+            "visible_answer_chars" to text.length,
+            "hidden_thinking_chars" to thinkingFilter.thinkingText.length,
+            "blank_visible_answer" to text.isBlank(),
+            "decode_len" to (metrics["decode_len"] ?: 0L),
+        )
+        if (MnnThinkingPolicy.isHiddenOnlyAnswer(text, thinkingFilter.thinkingText)) {
+            throw IllegalStateException(
+                "Model emitted hidden reasoning but no visible answer; thinking must remain disabled."
+            )
+        }
+        return GenerationResult(
+            text = text,
+            metrics = GenerationMetrics(
+                promptTokens = metrics["prompt_len"] ?: 0L,
+                decodeTokens = metrics["decode_len"] ?: 0L,
+                prefillUs = metrics["prefill_time"] ?: 0L,
+                decodeUs = metrics["decode_time"] ?: 0L,
+                visibleTtftMs = visibleTtftMs,
+                totalMs = EdgeTutorPerf.elapsedMs(startNs),
+            ),
+            thinking = thinkingFilter.thinkingText,
+        )
     }
-
-    private fun buildChatPrompt(userContent: String): String =
-        "<|im_start|>system\n$SYSTEM_PROMPT<|im_end|>\n" +
-        "<|im_start|>user\n$userContent<|im_end|>\n" +
-        "<|im_start|>assistant\n"
 
     private suspend fun <T> withGenerateLock(caller: String, block: suspend () -> T): T {
         val waitStartNs = System.nanoTime()
