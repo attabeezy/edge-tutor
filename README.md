@@ -15,15 +15,6 @@ An offline RAG (Retrieval-Augmented Generation) tutoring assistant for Android. 
 edge-tutor/
 ├── android-mnn/              # Primary Android app using Qwen3.5 and MNN-LLM
 ├── android-ltk/              # Historical Llamatik/llama.cpp reference app
-│   ├── app/src/main/java/com/edgetutor/
-│   │   ├── data/db/          # Room database entities, DAO, converters
-│   │   ├── ingestion/        # PDF extraction, chunking, tokenization, embedding
-│   │   ├── llm/              # LLM engine abstractions and prompt sanitizer
-│   │   ├── perf/             # Android performance helpers
-│   │   ├── store/            # On-device vector/index storage
-│   │   └── viewmodel/        # Chat and ingestion state
-│   ├── app/src/main/res/     # Android resources and launcher assets
-│   └── app/src/test/         # Android unit tests
 ├── src/                      # Python MVP prototype
 │   ├── ingestion/            # PDF parsing, chunking, and embedding pipeline
 │   └── rag/                  # Query pipeline and REPL
