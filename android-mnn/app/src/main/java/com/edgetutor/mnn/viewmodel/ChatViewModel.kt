@@ -993,15 +993,19 @@ Question: $question
 
     private fun buildGeneralPrompt(question: String): String =
         "Answer this question from general knowledge. Be concise and factual. " +
-            "Use Markdown and enclose every math expression in \$...\$ or \$\$...\$\$.\nQuestion: $question"
+            "Write the answer as plain Markdown prose. Only put actual mathematical " +
+            "formulas in LaTeX (inline \$...\$ or display \$\$...\$\$); never wrap " +
+            "ordinary words or whole sentences in math delimiters.\nQuestion: $question"
 
     private fun answerInstruction(wantsWorkedExample: Boolean): String =
         if (wantsWorkedExample) {
             "Use the passages. Give a small worked example. Show the derivative, integrate it back, and check the result. " +
-                "Use Markdown and enclose every math expression in \$...\$ or \$\$...\$\$."
+                "Write the answer as plain Markdown prose. Only put actual mathematical formulas in LaTeX " +
+                "(inline \$...\$ or display \$\$...\$\$); never wrap ordinary words or whole sentences in math delimiters."
         } else {
             "Answer using the passages. Be direct and explain the relationship. " +
-                "Use Markdown and enclose every math expression in \$...\$ or \$\$...\$\$."
+                "Write the answer as plain Markdown prose. Only put actual mathematical formulas in LaTeX " +
+                "(inline \$...\$ or display \$\$...\$\$); never wrap ordinary words or whole sentences in math delimiters."
         }
 
     // -------------------------------------------------------------------------

@@ -2,8 +2,9 @@
 <resources>
     <style name="Theme.EdgeTutorMnn" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">#2F7D4B</item>
-        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:colorBackground">@color/chat_background</item>
+        <item name="android:navigationBarColor">@color/chat_background</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:statusBarColor">#FFFFFF</item>
+        <item name="android:statusBarColor">@color/chat_background</item>
     </style>
 </resources>
