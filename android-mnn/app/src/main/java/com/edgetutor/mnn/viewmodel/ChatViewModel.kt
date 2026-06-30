@@ -1118,13 +1118,15 @@ Question: $question
 
     private fun answerInstruction(wantsWorkedExample: Boolean): String =
         if (wantsWorkedExample) {
-            "If answering from the textbook, give a small worked example when the passage supports it. " +
+            "The student explicitly requested a worked example. Explain it step by step, then ask " +
+                "one short check-for-understanding question. " +
                 "Write the answer as plain Markdown prose. Only put actual mathematical formulas in LaTeX " +
                 "(inline \$...\$ or display \$\$...\$\$); never wrap ordinary words or whole sentences in math delimiters."
         } else {
-            "Be direct and explain the relationship. " +
-                "Write the answer as plain Markdown prose. Only put actual mathematical formulas in LaTeX " +
-                "(inline \$...\$ or display \$\$...\$\$); never wrap ordinary words or whole sentences in math delimiters."
+            "Tutor the student using one short explanation or hint, then ask one guiding question. " +
+                "Do not immediately solve exercises for them. Write the answer as plain Markdown prose. " +
+                "Only put actual mathematical formulas in LaTeX (inline \$...\$ or display \$\$...\$\$); " +
+                "never wrap ordinary words or whole sentences in math delimiters."
         }
 
     // -------------------------------------------------------------------------

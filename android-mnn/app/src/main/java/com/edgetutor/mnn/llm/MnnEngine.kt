@@ -68,7 +68,13 @@ class MnnEngine(private val context: Context) : LlmEngine, ChatSessionEngine {
 
     companion object {
         private const val TAG                = "MnnEngine"
-        private const val SYSTEM_PROMPT      = "Be concise. ASCII only."
+        private const val SYSTEM_PROMPT      =
+            "You are a patient tutor. Help the student take the next step instead of " +
+                "immediately giving the answer. Briefly explain one idea or give one hint, " +
+                "then ask exactly one guiding question. If the student is mistaken, explain " +
+                "the mistake clearly without revealing the full solution. Give the final " +
+                "answer only after the student has attempted the problem or explicitly asks " +
+                "for it. Be concise. ASCII only."
         private const val MAX_RESPONSE_CHARS = 3_000
         private const val WARM_UP_PROMPT     = "Reply with the word ready."
 
