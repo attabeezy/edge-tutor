@@ -7,7 +7,7 @@ import org.junit.Test
 class ValidationSuiteTest {
     @Test
     fun suiteHasFourCasesPerCategory() {
-        assertEquals(16, EdgeTutorValidationSuite.cases.size)
+        assertEquals(40, EdgeTutorValidationSuite.cases.size)
         ValidationCategory.entries.forEach { category ->
             assertEquals(4, EdgeTutorValidationSuite.cases.count { it.category == category })
         }
@@ -37,6 +37,10 @@ class ValidationSuiteTest {
         assertTrue(csv.contains("mean_top5_similarity"))
         assertTrue(csv.contains("answer_route"))
         assertTrue(csv.contains("route_marker_valid"))
+        assertTrue(csv.contains("tutor_move_0_2"))
+        assertTrue(csv.contains("answer_restraint_0_2"))
+        assertTrue(csv.contains("adaptation_0_2"))
+        assertTrue(csv.contains("corrective_feedback_0_2"))
         assertTrue(csv.contains("\"1x500\""))
         assertTrue(csv.contains("\"100\""))
     }

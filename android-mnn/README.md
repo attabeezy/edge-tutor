@@ -161,8 +161,9 @@ After importing a model and loading a document, debug builds expose:
 - **benchmark prompts** — runs the four real-RAG prompt policies (`2x800`,
   `2x500`, `1x800`, and `1x500`) against four grounded questions, three times
   each.
-- **validate queries** — runs the fixed 16-case grounded, follow-up,
-  unsupported-academic, and non-academic suite.
+- **validate queries** — runs the fixed 40-case routing and tutoring suite: the
+  original grounded, follow-up, unsupported-academic, and non-academic cases plus
+  24 tutoring cases across four school subjects and six teaching behaviors.
 
 Start either suite over ADB without adding controls to the production UI:
 
