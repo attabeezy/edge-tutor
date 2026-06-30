@@ -1,118 +1,74 @@
 # EdgeTutor
 
-An offline RAG (Retrieval-Augmented Generation) tutoring assistant for Android. Designed for first-year engineering students at KNUST to query their textbooks offline — no internet required.
+An offline Android tutoring assistant that retrieves relevant textbook passages
+and answers with Qwen3.5-0.8B through MNN-LLM. The application is designed for
+low-memory Android devices and does not require internet access at runtime.
 
-## Features
+## Primary Application
 
-- **100% Offline** — Runs entirely on-device with zero network dependency
-- **PDF/TXT Ingestion** — Upload textbooks, get AI-powered answers
-- **Lightweight Models** — Optimized for ~1 GB free RAM Android devices
-- **Qwen3.5 0.8B** — Quantized SLM for on-device inference via MNN-LLM
+`android-mnn/` is the sole product implementation.
 
-## Project Structure
+It provides:
 
-```
-edge-tutor/
-├── android-mnn/              # Primary Android app using Qwen3.5 and MNN-LLM
-├── android-ltk/              # Historical Llamatik/llama.cpp reference app
-├── src/                      # Python MVP prototype
-│   ├── ingestion/            # PDF parsing, chunking, and embedding pipeline
-│   └── rag/                  # Query pipeline and REPL
-├── tests/                    # Python unit tests and RAG/model eval scripts
-├── scripts/                  # Setup, export, download, and repo hygiene scripts
-├── notebooks/                # Analysis notebooks and experiments
-├── data/                     # Runtime data: raw PDFs, processed text, indices
-├── models/                   # Local model files (git-ignored; copy/download manually)
-├── requirements.txt          # Python dependencies
-├── android-ltk/README.md     # Android build and run instructions
-└── PROJECT.md                # Specification, status, and roadmap
-```
+- PDF ingestion and local Arctic ONNX embeddings.
+- Flat cosine-similarity retrieval.
+- On-device Qwen3.5-0.8B MNN generation.
+- Bottom navigation for Chat, a multi-textbook Library with independent RAG
+  indexes, and Settings/tests.
+- One-pass model routing between textbook-grounded and general answers.
+- Streaming answers, source attribution, chat sessions, and performance logs.
 
-## Quick Start
+For build, model-import, and device-validation instructions, see
+[`android-mnn/README.md`](android-mnn/README.md).
 
-### Python Prototype
+## Answer Routing
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
+Every question retrieves the best available textbook passage. The model must
+begin its answer with one hidden routing marker:
 
-# Ingest a PDF
-python -c "from src.ingestion.pipeline import ingest; ingest('data/raw/MyBook.pdf')"
+- `[TEXTBOOK]` — answer is supported by the retrieved passage; sources appear.
+- `[GENERAL]` — answer uses model knowledge; sources are hidden and the answer
+  is visibly labelled as potentially inaccurate.
 
-# Run REPL
-python -m src.rag.repl MyBook
+Missing or malformed markers fail closed to the labelled general route.
+Retrieval similarity is retained for diagnostics but does not control routing.
 
-# Override the chat model for an A/B test
-python -m src.rag.repl MyBook -m qwen2.5:0.5b
-```
+## Python Support Tools
 
-### Android App
-
-See `android-mnn/README.md` for build and model-import instructions.
-
-## Requirements
-
-- Python 3.10+
-- Android Studio (for Android app)
-- Ollama (optional, for Python REPL testing)
-
-## Model Benchmarking
-
-Compare multiple Ollama chat models on the existing RAG pipeline:
-
-```bash
-python tests/eval_llm_models.py --doc CalculusMadeEasy
-python tests/eval_llm_models.py --doc CalculusMadeEasy --report reports/model-benchmark.md
-```
-
-By default this compares:
-
-- `qwen2.5:0.5b`
-- `lfm2.5:350m`
-- `granite4:350m-h`
-- `lfm2-math`
-
-To download the Granite/LFM comparison GGUF variants directly from Hugging Face into `models/`:
-
-```bash
-python scripts/download_hf_models.py
-```
-
-If you want the Python prototype to default to a different model without editing code, set:
+Python is limited to Android-supporting ONNX export and parity evaluation.
 
 ```powershell
-$env:EDGE_TUTOR_LLM_MODEL = "qwen2.5:0.5b"
+pip install -r requirements.txt
+python scripts/export_onnx.py
+.venv\Scripts\python.exe -m pytest tests/test_arctic_onnx.py -q
+.venv\Scripts\python.exe tests/eval_calculus_routing_onnx.py
 ```
 
-To benchmark local GGUF files directly instead of Ollama, install `llama-cpp-python` and run:
+The local routing benchmark is diagnostic. Python PDF extraction can differ
+from Android PDFBox, so product claims require Android device logs.
 
-```bash
-python tests/eval_local_gguf.py --doc CalculusMadeEasy
+## Repository Structure
+
+```text
+android-mnn/   Primary Android product
+scripts/       Arctic ONNX export
+src/rag/       Android-compatible Arctic ONNX parity implementation
+tests/         ONNX parity tests and Calculus retrieval benchmark
+reports/       Preserved Android device evidence and current parity results
+models/        Local model files (ignored)
+data/          Local source PDFs and generated indices (ignored)
 ```
 
-## GitHub prep (Windows + Android build outputs)
+## Verification
 
-If you hit `Filename too long` while staging or pushing, apply these once:
+```powershell
+cd android-mnn
+.\gradlew.bat testDebugUnitTest
 
-```bash
-git config --global core.longpaths true
-```
-
-Then keep your clone path short (example: `C:\src\edge-tutor`) and avoid committing generated Android outputs.
-This repository intentionally ignores generated/build artifacts for `android-ltk/`.
-
-If build artifacts were already staged, unstage them before committing:
-
-```bash
-git restore --staged android-ltk/app/build
-```
-
-Run the repo hygiene guardrail before pushing (or wire it into CI):
-
-```bash
+cd ..
 pwsh -File scripts/check_repo_hygiene.ps1
 ```
 
 ## License
 
-MIT License — see LICENSE file.
+MIT License — see `LICENSE`.

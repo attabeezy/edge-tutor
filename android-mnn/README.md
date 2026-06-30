@@ -1,24 +1,23 @@
-# android-mnn — EdgeTutor MNN-LLM Variant
+# android-mnn — EdgeTutor Android App
 
-Android implementation of EdgeTutor using **MNN-LLM** as the on-device
-inference engine instead of Llamatik/llama.cpp.
+Primary EdgeTutor product application using **MNN-LLM** for on-device
+inference.
 
-The embedding pipeline (ONNX Runtime + Arctic XS), the vector store (FlatIndex),
-and the PDF ingestion pipeline are **identical** to `android-ltk` so TTFT and
-quality measurements are directly comparable between the two variants.
+The app combines Arctic XS through ONNX Runtime, a local FlatIndex, PDFBox
+ingestion, and Qwen3.5-0.8B-MNN generation.
 
 ---
 
 ## Architecture
 
-| Layer | android-ltk | android-mnn |
-|---|---|---|
-| **LLM engine** | Llamatik (llama.cpp, GGUF) | MNN-LLM (MNN, .mnn weights) |
-| **JNI bridge** | LlamaBridge (Llamatik AAR) | `MnnNativeBridge` → `libMNN.so` (monolithic) |
-| **Embedding** | ONNX Runtime + arctic.onnx | **same** |
-| **Vector store** | FlatIndex | **same** |
-| **PDF parsing** | PDFBox Android | **same** |
-| **UI** | Compose (ChatViewModel) | **same** |
+| Layer | Implementation |
+|---|---|
+| **LLM engine** | MNN-LLM with Qwen3.5-0.8B |
+| **JNI bridge** | `MnnNativeBridge` → monolithic `libMNN.so` |
+| **Embedding** | ONNX Runtime + `arctic.onnx` |
+| **Vector store** | FlatIndex |
+| **PDF parsing** | PDFBox Android |
+| **UI** | Android views, Room-backed sessions |
 
 ---
 
@@ -55,30 +54,21 @@ cp libMNN.so \
 
 ### 2. MNN model files — Qwen3.5-0.8B-MNN ✅ Files ready locally
 
-The model is at `models/Qwen3.5-0.8B-MNN/` in the repo root (~516 MB total).
-Push it to the device in **two steps** — adb cannot write directly to app
-`filesDir` without root, so we stage via `/sdcard/` first:
+The model is at `models/Qwen3.5-0.8B-MNN/` in the repository root (~516 MB).
+The Android build validates the required files and stages them as generated
+assets under `mnn_model/`; no model files are copied into tracked source
+directories. A missing or incomplete local model fails the build with the
+missing filenames.
 
-**Step 1 — Authorize USB debugging** on the phone when prompted, then:
+On first launch, the app copies the bundled model transactionally into
+`context.filesDir/mnn_model/`, validates it, and then initializes MNN. Keep at
+least 1.2 GB free for the installed APK, the private model copy, and working
+space. Later launches reuse the validated private copy.
 
-```powershell
-# Push all model files to external storage (works without root)
-$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-& $adb push models\Qwen3.5-0.8B-MNN\ /sdcard/Download/mnn_model/
-```
+The Settings **Import Model** picker remains available if automatic extraction
+fails or a development model needs to be supplied manually.
 
-**Step 2 — Copy from sdcard into app's private filesDir:**
-
-```powershell
-& $adb shell run-as com.edgetutor.mnn mkdir -p /data/data/com.edgetutor.mnn/files/mnn_model
-& $adb shell run-as com.edgetutor.mnn cp -r /sdcard/Download/mnn_model/. /data/data/com.edgetutor.mnn/files/mnn_model/
-```
-
-> **Note:** `run-as` only works on debug builds and debuggable devices.
-> For a production workflow, implement a file-copy step at first app launch
-> that reads from `/sdcard/Download/mnn_model/` into `context.filesDir`.
-
-Files pushed:
+Files bundled:
 ```
 config.json          (MNN-LLM session config — thinking disabled at runtime)
 llm.mnn              (~2 MB, model graph)
@@ -100,14 +90,15 @@ visual.mnn.weight    (~60 MB, vision weights — unused for text-only RAG)
 Normal text and vision responses are capped at 192 generated tokens. Warm-up
 generation uses a separate 8-token cap.
 
-### 3. ONNX embedding assets (same as android-ltk)
+### 3. ONNX embedding assets
 
 ```
 app/src/main/assets/arctic.onnx
 app/src/main/assets/vocab.txt
 ```
 
-Copy from `android-ltk/app/src/main/assets/` — they are the same files.
+Generate and copy these with `python scripts/export_onnx.py` from the repository
+root.
 
 ---
 
@@ -116,6 +107,12 @@ Copy from `android-ltk/app/src/main/assets/` — they are the same files.
 ```powershell
 cd android-mnn
 .\gradlew.bat assembleDebug
+```
+
+Sideload the single APK; a separate model push is no longer required:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
 Unit tests (no device needed):
@@ -134,10 +131,10 @@ cd android-mnn
 | `llm/MnnNativeBridge.kt` | JNI `object` that loads `libedgetutor_mnn.so`, linked against monolithic `libMNN.so` |
 | `llm/MnnProgressListener.kt` | Per-token callback interface |
 | `llm/MnnEngine.kt` | `LlmEngine` implementation backed by MNN |
-| `llm/LlmEngine.kt` | Shared engine interface (mirrors android-ltk) |
-| `llm/PromptSanitizer.kt` | ASCII safety filter (verbatim copy from ltk) |
+| `llm/LlmEngine.kt` | Shared engine interface |
+| `llm/PromptSanitizer.kt` | Prompt safety filter |
 | `viewmodel/ChatViewModel.kt` | RAG query + streaming (MnnEngine plugged in) |
-| `viewmodel/IngestViewModel.kt` | PDF ingestion (identical to ltk) |
+| `viewmodel/IngestViewModel.kt` | PDF ingestion |
 | `perf/EdgeTutorPerf.kt` | Structured Logcat perf logger |
 
 ---
@@ -149,8 +146,13 @@ adb logcat EdgeTutorPerf:D MnnEngine:D EdgeTutorJNI:D AndroidRuntime:E *:S
 ```
 
 For query validation, confirm each run contains `llm_thinking_config`,
-`query_route`, `prompt_metrics`, `llm_decode_first_token`,
+`prompt_metrics`, `llm_decode_first_token`,
 `llm_decode_total`, and either `query_complete` or `query_failed`.
+
+Routing telemetry includes `answer_route`, `route_marker_valid`, and
+`route_reason`. Textbook sources are attached only when the model begins with
+`[TEXTBOOK]`. `[GENERAL]` and malformed markers hide sources and receive the
+visible model-knowledge warning.
 
 ## Debug device validation
 
@@ -182,16 +184,11 @@ Pull them with:
 ```
 
 The CSV contains native prefill/decode timing, visible TTFT, total time, memory,
-answers, sources, selected query route, top-1 and top-2 cosine similarity, mean
-top-5 similarity, the routing threshold, and blank 0-2 rubric columns for
-manual review.
+answers, sources, model-selected answer route, marker validity, retrieval
+similarities, and blank 0-2 rubric columns for manual review.
 
-Automatic routing uses the mean Arctic Embed XS cosine similarity across the
-five highest-ranked chunks. A mean at or above `0.63165` uses textbook
-passages; lower means use general generation. Follow-ups are independently
-routed from their rewritten retrieval query rather than inheriting the
-preceding route. The threshold is experimental and must be validated across
-additional textbooks before release.
+Similarity values are diagnostic only. Qwen selects `[TEXTBOOK]` or
+`[GENERAL]` in the same generation that produces the answer.
 
 ---
 
@@ -199,7 +196,8 @@ additional textbooks before release.
 
 - `libMNN.so` is **not** compressed in the APK (`useLegacyPackaging = true`).
 - `.mnn`, `.weight`, `.txt`, `.json`, `.md`, and `.bin` assets are excluded from APK compression via `noCompress`, matching the MNN chat app packaging style.
-- The DB name is `edgetutor_mnn.db` so it does not conflict with `android-ltk`
-  installed on the same device.
-- `MnnEngine.keepHistory = false` for single-turn RAG parity with android-ltk.
-  Multi-turn context is handled at the prompt level (same as ltk).
+- The bundled model roughly doubles its device-storage cost during first launch because the native runtime requires normal filesystem paths rather than APK asset paths.
+- Updating an installed MVP build preserves an existing valid private model; clear app data or reinstall to force extraction of changed bundled weights.
+- The DB name is `edgetutor_mnn.db`.
+- Native history is reset between generations. Multi-turn context is rebuilt
+  explicitly at the prompt level.
