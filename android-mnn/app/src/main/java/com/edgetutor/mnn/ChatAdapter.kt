@@ -12,6 +12,7 @@ import com.edgetutor.mnn.databinding.ItemMessageAssistantBinding
 import com.edgetutor.mnn.databinding.ItemMessageUserBinding
 import com.edgetutor.mnn.ui.LatexInlineProcessor
 import com.edgetutor.mnn.viewmodel.ChatMessage
+import com.edgetutor.mnn.viewmodel.GenerationProgressText
 import com.edgetutor.mnn.viewmodel.Role
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.latex.JLatexMathPlugin
@@ -63,10 +64,20 @@ class ChatAdapter : ListAdapter<ChatMessage, RecyclerView.ViewHolder>(Diff) {
             .build()
 
         fun bind(item: ChatMessage) = with(binding) {
-            if (item.text.isEmpty()) {
-                message.text = if (item.completionState == "streaming") "Thinking…" else ""
-            } else {
+            val terminalStatus = when (item.completionState) {
+                "stopped" -> "Generation stopped"
+                "error" -> "Couldn’t generate response"
+                else -> null
+            }
+            generationStatusGroup.isVisible = item.generationProgress != null || terminalStatus != null
+            generationSpinner.isVisible = item.generationProgress != null
+            generationStatus.text = item.generationProgress?.let(GenerationProgressText::format)
+                ?: terminalStatus.orEmpty()
+            message.isVisible = item.text.isNotEmpty()
+            if (item.text.isNotEmpty()) {
                 markwon.setMarkdown(message, markdownForRender(item.text, item.completionState == "streaming"))
+            } else {
+                message.text = ""
             }
             thinkingGroup.isVisible = !item.thinking.isNullOrBlank()
             thinking.text = item.thinking

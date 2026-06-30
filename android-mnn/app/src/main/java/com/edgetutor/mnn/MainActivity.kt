@@ -363,7 +363,9 @@ class MainActivity : AppCompatActivity() {
                         invalidateOptionsMenu()
                         binding.send.setImageResource(if (isGenerating) R.drawable.ic_stop else R.drawable.ic_send)
                         binding.send.contentDescription = if (isGenerating) "Stop generation" else "Send message"
-                        binding.prefill.isVisible = warming || (isGenerating && adapter.currentList.lastOrNull()?.text.isNullOrBlank())
+                        // Query progress is shown in its assistant row. Keep this
+                        // global bar only for document/model warm-up.
+                        binding.prefill.isVisible = warming
                         binding.attach.isEnabled = !isGenerating
                         binding.cameraButton.isEnabled = !isGenerating
                         binding.btnToggleThinking.isEnabled = !isGenerating

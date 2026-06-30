@@ -25,6 +25,7 @@ import com.edgetutor.mnn.store.FlatIndex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -34,8 +35,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import com.google.gson.Gson
 import kotlin.math.ceil
@@ -50,7 +53,32 @@ data class ChatMessage(
     val imagePath: String? = null,
     val metricsText: String? = null,
     val completionState: String = "complete",
+    val generationProgress: GenerationProgress? = null,
 )
+
+enum class GenerationPhase {
+    SEARCHING_TEXTBOOK,
+    READING_CONTEXT,
+}
+
+data class GenerationProgress(
+    val phase: GenerationPhase,
+    val elapsedSeconds: Long = 0,
+)
+
+object GenerationProgressText {
+    fun format(progress: GenerationProgress): String {
+        val label = when (progress.phase) {
+            GenerationPhase.SEARCHING_TEXTBOOK -> "Searching your textbook…"
+            GenerationPhase.READING_CONTEXT -> "Reading selected passages on device…"
+        }
+        return if (progress.elapsedSeconds >= 3) {
+            "$label · ${progress.elapsedSeconds}s"
+        } else {
+            label
+        }
+    }
+}
 
 data class QueryExecutionResult(
     val policyId: String,
@@ -433,6 +461,67 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 db.chatSessionDao().touch(sessionId, System.currentTimeMillis())
             }
+
+            // Add the response row before retrieval so the user gets immediate,
+            // truthful feedback for every part of the first-token wait.
+            val assistantEntity = MessageEntity(
+                documentId = docId,
+                sessionId = sessionId,
+                role = Role.ASSISTANT.name,
+                text = "",
+                sourcesJson = "[]",
+                completionState = "streaming",
+                thinkingEnabled = thinkingEnabled,
+            )
+            _messages.value += ChatMessage(
+                role = Role.ASSISTANT,
+                text = "",
+                completionState = "streaming",
+                generationProgress = GenerationProgress(GenerationPhase.SEARCHING_TEXTBOOK),
+            )
+            val assistantId = db.messageDao().insert(assistantEntity)
+            _messages.value = _messages.value.dropLast(1) +
+                _messages.value.last().copy(id = assistantId)
+
+            fun updateAssistant(transform: (ChatMessage) -> ChatMessage) {
+                _messages.update { messages ->
+                    val index = messages.indexOfLast { it.id == assistantId }
+                    if (index < 0) messages
+                    else messages.toMutableList().also { it[index] = transform(it[index]) }
+                }
+            }
+
+            val progressTicker = launch {
+                while (isActive) {
+                    delay(1_000)
+                    val elapsedSeconds =
+                        (SystemClock.elapsedRealtime() - thinkingStartMs) / 1_000
+                    updateAssistant { message ->
+                        val progress = message.generationProgress ?: return@updateAssistant message
+                        message.copy(
+                            generationProgress = progress.copy(elapsedSeconds = elapsedSeconds),
+                        )
+                    }
+                }
+            }
+
+            suspend fun finishInterruptedAssistant(completionState: String) {
+                updateAssistant {
+                    it.copy(completionState = completionState, generationProgress = null)
+                }
+                val current = _messages.value.lastOrNull { it.id == assistantId } ?: return
+                withContext(NonCancellable) {
+                    db.messageDao().update(
+                        assistantEntity.copy(
+                            id = assistantId,
+                            text = current.text,
+                            thinking = current.thinking,
+                            sourcesJson = gson.toJson(current.sources),
+                            completionState = completionState,
+                        )
+                    )
+                }
+            }
             try {
                 val app = getApplication<Application>()
                 val retrievalQuestion = buildRetrievalQuestion(effectiveQuestion, priorMessages)
@@ -517,25 +606,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     "answer_route"              to "PENDING_MODEL_MARKER",
                 )
 
-                // 4. Add placeholder ASSISTANT message; stream tokens into it.
-                _messages.value += ChatMessage(
-                    role    = Role.ASSISTANT,
-                    text    = "",
-                    sources = emptyList(),
-                )
-                val assistantId = db.messageDao().insert(
-                    MessageEntity(
-                        documentId = docId,
-                        sessionId = sessionId,
-                        role = Role.ASSISTANT.name,
-                        text = "",
-                        sourcesJson = gson.toJson(_messages.value.last().sources),
-                        completionState = "streaming",
-                        thinkingEnabled = thinkingEnabled,
-                    )
-                )
-                _messages.value = _messages.value.dropLast(1) + _messages.value.last().copy(id = assistantId)
-
                 val sourceExcerpts =
                     contextSelection.keptChunks.map { (_, chunk) -> chunk.take(120) + "." }
                 val routeParser = AnswerRouteParser()
@@ -545,11 +615,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 var uiVisibleTtftMs = -1L
                 fun flushAssistantChunk(chunk: String, source: String) {
                     if (chunk.isEmpty()) return
-                    val list = _messages.value.toMutableList()
-                    val last = list.last()
-                    val updatedText = last.text + chunk
-                    list[list.lastIndex] = last.copy(text = updatedText)
-                    _messages.value = list
+                    var updatedText = ""
+                    updateAssistant { message ->
+                        updatedText = message.text + chunk
+                        message.copy(text = updatedText, generationProgress = null)
+                    }
                     if (!uiVisibleTtftLogged && updatedText.isNotBlank()) {
                         uiVisibleTtftLogged = true
                         uiVisibleTtftMs = EdgeTutorPerf.elapsedMs(queryStartNs)
@@ -596,6 +666,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 try {
+                    updateAssistant { message ->
+                        val elapsed = message.generationProgress?.elapsedSeconds ?: 0
+                        message.copy(
+                            generationProgress = GenerationProgress(
+                                phase = GenerationPhase.READING_CONTEXT,
+                                elapsedSeconds = elapsed,
+                            ),
+                        )
+                    }
                     mnnEngine.setThinkingEnabled(thinkingEnabled)
                     val inferencePrompt = if (imagePath != null) {
                         "${sanitizedPrompt.value}\n<img>$imagePath</img>"
@@ -697,6 +776,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         _messages.value.last().copy(
                             completionState = "complete",
                             metricsText = metricsText,
+                            generationProgress = null,
                         )
                 } finally {
                     flushJob?.cancel()
@@ -727,6 +807,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     lastAssistantMessage.role == Role.ASSISTANT &&
                     lastAssistantMessage.text.isNotBlank()
             } catch (e: CancellationException) {
+                finishInterruptedAssistant("stopped")
                 throw e
             } catch (e: Exception) {
                 EdgeTutorPerf.log(
@@ -738,8 +819,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     "error_type" to e.javaClass.simpleName,
                     "error_message" to (e.message ?: ""),
                 )
+                finishInterruptedAssistant("error")
                 _errorMessage.value = "Query failed: ${e.message}"
             } finally {
+                progressTicker.cancel()
                 _isGenerating.value = false
                 generationJob = null
                 _thinkingUiState.value =
