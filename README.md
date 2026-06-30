@@ -33,6 +33,13 @@ begin its answer with one hidden routing marker:
 Missing or malformed markers fail closed to the labelled general route.
 Retrieval similarity is retained for diagnostics but does not control routing.
 
+## Tutor Fine-Tuning
+
+The authored 300-row tutoring dataset, validation tools, upstream evaluator, and
+free-Colab QLoRA/MNN workflow live in
+[`training/tutor/`](training/tutor/README.md). The dataset preserves the
+`[TEXTBOOK]`/`[GENERAL]` response contract and covers math, science,
+English/language arts, and social studies for beginner learners.
 ## Python Support Tools
 
 Python is limited to Android-supporting ONNX export and parity evaluation.
