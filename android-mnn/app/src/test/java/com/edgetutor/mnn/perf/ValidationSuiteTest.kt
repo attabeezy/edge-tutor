@@ -35,7 +35,8 @@ class ValidationSuiteTest {
         assertTrue(csv.contains("max_similarity"))
         assertTrue(csv.contains("second_similarity"))
         assertTrue(csv.contains("mean_top5_similarity"))
-        assertTrue(csv.contains("mean_top5_threshold"))
+        assertTrue(csv.contains("answer_route"))
+        assertTrue(csv.contains("route_marker_valid"))
         assertTrue(csv.contains("\"1x500\""))
         assertTrue(csv.contains("\"100\""))
     }

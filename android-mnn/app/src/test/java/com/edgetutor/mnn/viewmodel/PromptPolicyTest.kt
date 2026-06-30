@@ -18,7 +18,7 @@ class PromptPolicyTest {
     fun generalAnswerDetectionIgnoresLeadingWhitespaceAndCase() {
         assertTrue(
             AnswerAttributionPolicy.isGeneralKnowledgeAnswer(
-                "  the textbook does not cover this. general answer: Tokyo",
+                "  model knowledge (not from textbook; may be inaccurate): Tokyo",
             ),
         )
         assertFalse(AnswerAttributionPolicy.isGeneralKnowledgeAnswer("Calculus studies change."))

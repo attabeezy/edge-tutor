@@ -3,7 +3,7 @@ package com.edgetutor.mnn.ingestion
 /**
  * Paragraph-aware sliding-window text chunker.
  *
- * Mirrors src/ingestion/pipeline.py::chunk_text():
+ * Chunking contract used by the Android ingestion pipeline:
  *   - CHUNK_TOKENS = 400 words (whitespace-split approximation)
  *   - OVERLAP_TOKENS = 50 words
  *   - Splits on blank lines first; then slides a window word-by-word.

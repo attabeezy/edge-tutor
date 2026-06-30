@@ -25,10 +25,13 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.edgetutor.mnn.attachments.ImageAttachmentStore
 import com.edgetutor.mnn.data.db.IngestionStatus
+import com.edgetutor.mnn.data.db.DocumentEntity
 import com.edgetutor.mnn.databinding.ActivityMainBinding
 import com.edgetutor.mnn.ingestion.PdfExtractor
 import com.edgetutor.mnn.viewmodel.ChatViewModel
+import com.edgetutor.mnn.viewmodel.IngestionProgress
 import com.edgetutor.mnn.viewmodel.IngestViewModel
+import com.edgetutor.mnn.llm.ModelReadinessState
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.io.File
@@ -39,10 +42,14 @@ class MainActivity : AppCompatActivity() {
     private val chatVm: ChatViewModel by viewModels()
     private lateinit var adapter: ChatAdapter
     private lateinit var sessionAdapter: SessionAdapter
+    private lateinit var documentAdapter: DocumentLibraryAdapter
     private lateinit var attachmentStore: ImageAttachmentStore
     private var pendingCameraFile: File? = null
     private var modelReady = false
     private var generating = false
+    private var currentScreen = AppScreen.CHAT
+    private var currentDocumentTitle = "EdgeTutor"
+    private var currentDocumentStatus = ""
 
     private val documentPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@registerForActivityResult
@@ -76,8 +83,10 @@ class MainActivity : AppCompatActivity() {
         binding.chatList.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
         binding.chatList.adapter = adapter
         binding.chatList.itemAnimator = null
+        setupLibrary()
         setupHistoryDrawer()
         bindActions()
+        showScreen(AppScreen.CHAT)
         collectState()
         handleDebugIntent(intent)
     }
@@ -99,11 +108,35 @@ class MainActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this) {
             if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
                 binding.drawerLayout.closeDrawer(GravityCompat.START)
+            } else if (currentScreen != AppScreen.CHAT) {
+                showScreen(AppScreen.CHAT)
             } else {
                 isEnabled = false
                 onBackPressedDispatcher.onBackPressed()
             }
         }
+    }
+
+    private fun setupLibrary() {
+        documentAdapter = DocumentLibraryAdapter(
+            onOpen = { doc ->
+                ingestVm.selectDocument(doc.id)
+                showScreen(AppScreen.CHAT)
+            },
+            onDelete = ::confirmDeleteDocument,
+        )
+        binding.libraryDocumentList.layoutManager = LinearLayoutManager(this)
+        binding.libraryDocumentList.adapter = documentAdapter
+        binding.libraryDocumentList.itemAnimator = null
+    }
+
+    private fun confirmDeleteDocument(doc: DocumentEntity) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Delete textbook?")
+            .setMessage("This removes \"${doc.displayName}\", its RAG index, chats, and attachments.")
+            .setPositiveButton("Delete") { _, _ -> ingestVm.delete(doc) }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun confirmDeleteSession(item: SessionListItem) {
@@ -130,6 +163,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindActions() = with(binding) {
+        navChat.setOnClickListener { showScreen(AppScreen.CHAT) }
+        navLibrary.setOnClickListener { showScreen(AppScreen.LIBRARY) }
+        navSettings.setOnClickListener { showScreen(AppScreen.SETTINGS) }
+        libraryAddTextbook.setOnClickListener {
+            documentPicker.launch(arrayOf("application/pdf", "text/plain"))
+        }
+        settingsImportModel.setOnClickListener { modelPicker.launch(null) }
+        settingsRunValidation.setOnClickListener { chatVm.runValidationSuite() }
+        settingsRunBenchmark.setOnClickListener { chatVm.runPromptPolicyBenchmark() }
+        settingsRunValidation.isVisible = BuildConfig.DEBUG
+        settingsRunBenchmark.isVisible = BuildConfig.DEBUG
         send.setOnClickListener {
             if (chatVm.isGenerating.value) chatVm.stopGeneration()
             else {
@@ -167,8 +211,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        menu.findItem(R.id.action_import_model)?.isVisible = !modelReady
-        menu.findItem(R.id.action_choose_textbook)?.isEnabled = modelReady && !generating
+        menu.findItem(R.id.action_import_model)?.isVisible = false
+        menu.findItem(R.id.action_choose_textbook)?.isVisible = false
         return super.onPrepareOptionsMenu(menu)
     }
 
@@ -186,16 +230,66 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_RUN_PROMPT_BENCHMARK = "com.edgetutor.mnn.action.RUN_PROMPT_BENCHMARK"
     }
 
+    private enum class AppScreen { CHAT, LIBRARY, SETTINGS }
+
+    private data class LibraryState(
+        val documents: List<DocumentEntity>,
+        val progress: Map<Long, IngestionProgress>,
+        val model: ModelReadinessState,
+        val selectedDocumentId: Long?,
+    )
+
+    private fun showScreen(screen: AppScreen) = with(binding) {
+        currentScreen = screen
+        val chatVisible = screen == AppScreen.CHAT
+        chatList.isVisible = chatVisible
+        inputCard.isVisible = chatVisible
+        if (!chatVisible) {
+            returnToBottom.isVisible = false
+            prefill.isVisible = false
+            layoutMoreMenu.isVisible = false
+        }
+        libraryScreen.isVisible = screen == AppScreen.LIBRARY
+        settingsScreen.isVisible = screen == AppScreen.SETTINGS
+        navChat.isSelected = chatVisible
+        navLibrary.isSelected = screen == AppScreen.LIBRARY
+        navSettings.isSelected = screen == AppScreen.SETTINGS
+        navChat.alpha = if (chatVisible) 1f else 0.55f
+        navLibrary.alpha = if (screen == AppScreen.LIBRARY) 1f else 0.55f
+        navSettings.alpha = if (screen == AppScreen.SETTINGS) 1f else 0.55f
+        supportActionBar?.setDisplayHomeAsUpEnabled(chatVisible)
+        toolbarTitle.text = when (screen) {
+            AppScreen.CHAT -> currentDocumentTitle
+            AppScreen.LIBRARY -> "Library"
+            AppScreen.SETTINGS -> "Settings"
+        }
+        toolbarStatus.text = if (screen == AppScreen.CHAT) currentDocumentStatus else ""
+        invalidateOptionsMenu()
+    }
+
     private fun collectState() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
-                    combine(ingestVm.documents, ingestVm.progress, chatVm.modelReadiness) { docs, progress, model ->
-                        Triple(docs.firstOrNull(), progress, model)
-                    }.collect { (doc, progress, model) ->
+                    combine(
+                        ingestVm.documents,
+                        ingestVm.progress,
+                        chatVm.modelReadiness,
+                        ingestVm.selectedDocumentId,
+                    ) { docs, progress, model, selectedId ->
+                        LibraryState(docs, progress, model, selectedId)
+                    }.collect { state ->
+                        val docs = state.documents
+                        val progress = state.progress
+                        val model = state.model
+                        val doc = docs.firstOrNull { it.id == state.selectedDocumentId }
+                            ?: docs.firstOrNull { it.status == IngestionStatus.DONE }
+                            ?: docs.firstOrNull()
+                        if (doc != null && state.selectedDocumentId != doc.id) {
+                            ingestVm.selectDocument(doc.id)
+                        }
                         modelReady = model.isReady
-                        binding.toolbarTitle.text = doc?.displayName ?: "EdgeTutor"
-                        binding.toolbarStatus.text = when {
+                        val status = when {
                             !model.isReady -> model.message ?: "Import Qwen3.5 model"
                             doc == null -> "Add a PDF or text file"
                             doc.status == IngestionStatus.RUNNING ->
@@ -205,8 +299,51 @@ class MainActivity : AppCompatActivity() {
                             doc.status == IngestionStatus.ERROR -> doc.errorMessage ?: "Import failed"
                             else -> "Add a PDF or text file"
                         }
+                        currentDocumentTitle = doc?.displayName ?: "EdgeTutor"
+                        currentDocumentStatus = status
+                        if (currentScreen == AppScreen.CHAT) {
+                            binding.toolbarTitle.text = doc?.displayName ?: "EdgeTutor"
+                            binding.toolbarStatus.text = status
+                        }
+                        binding.libraryDocumentName.text = doc?.displayName ?: "No textbook added"
+                        binding.libraryDocumentStatus.text = when {
+                            doc == null -> "Choose a PDF or text file to begin."
+                            doc.status == IngestionStatus.RUNNING -> status
+                            doc.status == IngestionStatus.DONE ->
+                                "${doc.pageCount} pages · ${doc.chunkCount} RAG chunks · index ready"
+                            doc.status == IngestionStatus.ERROR -> status
+                            else -> status
+                        }
+                        binding.libraryProgress.isVisible = doc?.status == IngestionStatus.RUNNING
+                        binding.libraryEmpty.isVisible = docs.isEmpty()
+                        documentAdapter.submitList(
+                            docs.map { item ->
+                                val itemStatus = when (item.status) {
+                                    IngestionStatus.RUNNING ->
+                                        progress[item.id]?.let { "${it.phase} ${it.current}/${it.total}" }
+                                            ?: "Building RAG index"
+                                    IngestionStatus.DONE ->
+                                        "${item.pageCount} pages · ${item.chunkCount} chunks · ready"
+                                    IngestionStatus.ERROR -> item.errorMessage ?: "Indexing failed"
+                                    IngestionStatus.PENDING -> "Waiting to index"
+                                }
+                                LibraryDocumentItem(item, itemStatus, item.id == doc?.id)
+                            },
+                        )
+                        binding.libraryAddTextbook.isEnabled = model.isReady &&
+                            doc?.status != IngestionStatus.RUNNING && !generating
+                        binding.settingsModelStatus.text =
+                            if (model.isReady) "Qwen model ready" else model.message ?: "Qwen model not imported"
+                        binding.settingsImportModel.isVisible = !model.isReady
                         invalidateOptionsMenu()
-                        if (doc?.status == IngestionStatus.DONE && doc.id != chatVm.activeDocumentId.value) chatVm.loadDocument(doc)
+                        if (doc?.status == IngestionStatus.DONE && doc.id != chatVm.activeDocumentId.value) {
+                            chatVm.loadDocument(doc)
+                        } else if (
+                            chatVm.activeDocumentId.value != null &&
+                            docs.none { it.id == chatVm.activeDocumentId.value }
+                        ) {
+                            chatVm.clearDocument()
+                        }
                     }
                 }
                 launch {
@@ -219,11 +356,9 @@ class MainActivity : AppCompatActivity() {
                 }
                 launch {
                     combine(chatVm.isGenerating, chatVm.isWarmingUp, chatVm.pendingImagePath) {
-                            generating, warming, image -> arrayOf(generating, warming, image)
+                            generating, warming, image -> Triple(generating, warming, image)
                     }.collect { state ->
-                        val isGenerating = state[0] as Boolean
-                        val warming = state[1] as Boolean
-                        val image = state[2] as String?
+                        val (isGenerating, warming, image) = state
                         generating = isGenerating
                         invalidateOptionsMenu()
                         binding.send.setImageResource(if (isGenerating) R.drawable.ic_stop else R.drawable.ic_send)
@@ -232,12 +367,25 @@ class MainActivity : AppCompatActivity() {
                         binding.attach.isEnabled = !isGenerating
                         binding.cameraButton.isEnabled = !isGenerating
                         binding.btnToggleThinking.isEnabled = !isGenerating
+                        binding.libraryAddTextbook.isEnabled = modelReady && !isGenerating &&
+                            ingestVm.progress.value.isEmpty()
+                        val testsIdle = chatVm.validationStatus.value?.startsWith("running") != true
+                        binding.settingsRunValidation.isEnabled = testsIdle && modelReady && !isGenerating
+                        binding.settingsRunBenchmark.isEnabled = testsIdle && modelReady && !isGenerating
                         binding.attachmentPreview.isVisible = image != null
                         if (image != null) binding.attachmentImage.setImageURI(Uri.fromFile(File(image)))
                     }
                 }
                 launch {
                     chatVm.thinkingEnabled.collect { binding.btnToggleThinking.isSelected = it }
+                }
+                launch {
+                    chatVm.validationStatus.collect {
+                        binding.settingsValidationStatus.text = it ?: "No test running"
+                        val running = it?.startsWith("running") == true
+                        binding.settingsRunValidation.isEnabled = !running && modelReady && !generating
+                        binding.settingsRunBenchmark.isEnabled = !running && modelReady && !generating
+                    }
                 }
                 launch {
                     chatVm.errorMessage.collect {

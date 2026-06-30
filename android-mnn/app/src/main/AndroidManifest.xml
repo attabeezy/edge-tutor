@@ -5,7 +5,7 @@
     <application
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="EdgeTutor MNN"
+        android:label="Edge Tutor"
         android:largeHeap="true"
         android:theme="@style/Theme.EdgeTutorMnn">
         <activity

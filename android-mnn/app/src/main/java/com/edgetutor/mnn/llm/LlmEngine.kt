@@ -17,9 +17,11 @@ interface LlmEngine : AutoCloseable {
      * storage if it is not already present.
      * This is the slow I/O phase and should be started in the background at
      * app startup, well before the user selects a document.
-     * Default implementation is a no-op.
+     * Progress is reported while a bundled model is installed for the first time.
      */
-    suspend fun copyModelIfNeeded() {}
+    suspend fun copyModelIfNeeded(
+        onProgress: (ModelReadinessState) -> Unit = {},
+    ): ModelReadinessState
 
     /**
      * Load the native model weights into memory.

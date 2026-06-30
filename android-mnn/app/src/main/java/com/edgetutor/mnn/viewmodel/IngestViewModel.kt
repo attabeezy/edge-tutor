@@ -45,6 +45,8 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _progress = MutableStateFlow<Map<Long, IngestionProgress>>(emptyMap())
     val progress: StateFlow<Map<Long, IngestionProgress>> = _progress.asStateFlow()
+    private val _selectedDocumentId = MutableStateFlow<Long?>(null)
+    val selectedDocumentId: StateFlow<Long?> = _selectedDocumentId.asStateFlow()
 
     companion object {
         private const val TAG                = "IngestViewModel"
@@ -70,22 +72,12 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
     private fun computeAdaptivePageWindow(): Int =
         if (isLowMemory()) LOW_MEM_PAGE_WINDOW else DEFAULT_PAGE_WINDOW
 
-    private suspend fun replaceAllDocuments() {
-        activeJobs.values.forEach { it.cancel() }
-        activeJobs.clear()
-        db.documentDao().getAll().forEach { doc ->
-            File(getApplication<Application>().filesDir, "${doc.id}.idx").delete()
-            ImageAttachmentStore(getApplication()).deleteForDocument(doc.id)
-            db.documentDao().delete(doc)
-        }
-    }
-
     fun ingest(uri: Uri, displayName: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            replaceAllDocuments()
             val docId = db.documentDao().insert(
                 DocumentEntity(displayName = displayName, uriString = uri.toString())
             )
+            _selectedDocumentId.value = docId
             val doc = db.documentDao().getById(docId)!!
             db.documentDao().update(doc.copy(status = IngestionStatus.RUNNING))
             activeJobs[docId] = coroutineContext[Job]!!
@@ -202,11 +194,17 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
         activeJobs[docId]?.cancel()
     }
 
+    fun selectDocument(docId: Long) {
+        _selectedDocumentId.value = docId
+    }
+
     fun delete(doc: DocumentEntity) {
         viewModelScope.launch(Dispatchers.IO) {
+            activeJobs.remove(doc.id)?.cancel()
             File(getApplication<Application>().filesDir, "${doc.id}.idx").delete()
             ImageAttachmentStore(getApplication()).deleteForDocument(doc.id)
             db.documentDao().delete(doc)
+            if (_selectedDocumentId.value == doc.id) _selectedDocumentId.value = null
         }
     }
 

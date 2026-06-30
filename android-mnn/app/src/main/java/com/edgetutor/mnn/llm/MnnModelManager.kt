@@ -32,6 +32,7 @@ data class ModelReadinessState(
 
 object MnnModelManager {
     const val MODEL_DIR_NAME = "mnn_model"
+    const val BUNDLED_ASSET_DIR = "mnn_model"
     const val CONFIG_FILE = "config.json"
 
     val REQUIRED_FILES = listOf(
@@ -101,6 +102,87 @@ object MnnModelManager {
                 missingFiles = missing,
                 message = "Missing ${missing.size} required model file(s).",
             )
+        }
+    }
+
+    suspend fun installBundledModelIfNeeded(
+        context: Context,
+        onProgress: (ModelReadinessState) -> Unit = {},
+    ): ModelReadinessState = withContext(Dispatchers.IO) {
+        resolveReadyModelDir(context)?.let { return@withContext validateModelDir(it) }
+
+        installModelFiles(
+            targetDir = internalModelDir(context),
+            openSource = { name ->
+                context.assets.open("$BUNDLED_ASSET_DIR/$name")
+            },
+            onProgress = onProgress,
+        )
+    }
+
+    /**
+     * Installs a complete model through a sibling staging directory so an
+     * interrupted first launch never exposes a partial model as ready.
+     */
+    internal fun installModelFiles(
+        targetDir: File,
+        openSource: (String) -> java.io.InputStream,
+        onProgress: (ModelReadinessState) -> Unit = {},
+    ): ModelReadinessState {
+        if (validateModelDir(targetDir).isReady) return validateModelDir(targetDir)
+
+        val parentDir = targetDir.parentFile
+            ?: return ModelReadinessState(
+                kind = ModelReadinessKind.ERROR,
+                modelDir = targetDir.absolutePath,
+                message = "Model directory has no parent.",
+            )
+        val stagingDir = File(parentDir, "$MODEL_DIR_NAME.installing")
+
+        return try {
+            if (stagingDir.exists() && !stagingDir.deleteRecursively()) {
+                error("Cannot clear an incomplete bundled-model installation.")
+            }
+            if (!stagingDir.mkdirs() && !stagingDir.isDirectory) {
+                error("Cannot create the bundled-model staging directory.")
+            }
+
+            REQUIRED_FILES.forEachIndexed { index, name ->
+                onProgress(
+                    ModelReadinessState(
+                        kind = ModelReadinessKind.IMPORTING,
+                        modelDir = targetDir.absolutePath,
+                        message = "Installing bundled model: $name",
+                        progressCurrent = index + 1,
+                        progressTotal = REQUIRED_FILES.size,
+                    ),
+                )
+                openSource(name).buffered().use { input ->
+                    File(stagingDir, name).outputStream().buffered().use { output ->
+                        input.copyTo(output, bufferSize = 1024 * 1024)
+                    }
+                }
+            }
+
+            val stagedState = validateModelDir(stagingDir)
+            check(stagedState.isReady) {
+                stagedState.message ?: "Bundled model validation failed."
+            }
+            if (targetDir.exists() && !targetDir.deleteRecursively()) {
+                error("Cannot replace the incomplete internal model directory.")
+            }
+            if (!stagingDir.renameTo(targetDir)) {
+                error("Cannot activate the bundled model after copying it.")
+            }
+
+            validateModelDir(targetDir).also(onProgress)
+        } catch (e: Exception) {
+            stagingDir.deleteRecursively()
+            ModelReadinessState(
+                kind = ModelReadinessKind.ERROR,
+                modelDir = targetDir.absolutePath,
+                message = e.message ?: e.javaClass.simpleName,
+            ).also(onProgress)
         }
     }
 

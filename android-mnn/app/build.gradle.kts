@@ -3,6 +3,40 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val requiredMnnModelFiles = listOf(
+    "config.json",
+    "llm_config.json",
+    "tokenizer.txt",
+    "llm.mnn",
+    "llm.mnn.json",
+    "llm.mnn.weight",
+    "visual.mnn",
+    "visual.mnn.weight",
+)
+val bundledMnnModelSource = rootProject.file("../models/Qwen3.5-0.8B-MNN")
+val generatedBundledMnnAssets = layout.buildDirectory.dir("generated/assets/bundledMnnModel")
+val prepareBundledMnnModel by tasks.registering(Sync::class) {
+    group = "build setup"
+    description = "Stages the local Qwen MNN model as generated Android assets."
+    inputs.dir(bundledMnnModelSource)
+    outputs.dir(generatedBundledMnnAssets)
+
+    doFirst {
+        val missing = requiredMnnModelFiles.filterNot { bundledMnnModelSource.resolve(it).isFile }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Cannot bundle Qwen3.5-0.8B-MNN. Missing from " +
+                    "${bundledMnnModelSource.absolutePath}: ${missing.joinToString()}",
+            )
+        }
+    }
+
+    from(bundledMnnModelSource) {
+        include(requiredMnnModelFiles)
+    }
+    into(generatedBundledMnnAssets.map { it.dir("mnn_model") })
+}
+
 android {
     namespace   = "com.edgetutor.mnn"
     compileSdk  = 36
@@ -58,6 +92,18 @@ android {
 
     lint {
         checkReleaseBuilds = false
+    }
+
+    sourceSets.named("main") {
+        assets.srcDir(generatedBundledMnnAssets.get().asFile)
+    }
+}
+
+// Generated asset directories do not automatically establish a task dependency
+// when registered through the legacy sourceSets API.
+tasks.configureEach {
+    if (name.startsWith("merge") && name.endsWith("Assets")) {
+        dependsOn(prepareBundledMnnModel)
     }
 }
 

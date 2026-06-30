@@ -2,7 +2,6 @@ package com.edgetutor.mnn.perf
 
 import com.edgetutor.mnn.viewmodel.AnswerAttributionPolicy
 import com.edgetutor.mnn.viewmodel.QueryRoute
-import com.edgetutor.mnn.viewmodel.QueryRoutingPolicy
 import java.io.File
 
 enum class ValidationCategory { GROUNDED, FOLLOW_UP, UNSUPPORTED_ACADEMIC, NON_ACADEMIC }
@@ -30,8 +29,9 @@ data class ValidationResult(
     val visibleTtftMs: Long,
     val totalMs: Long,
     val availableMemoryMb: Long,
-    val route: QueryRoute = QueryRoute.GROUNDED,
+    val route: QueryRoute = QueryRoute.TEXTBOOK,
     val routeReason: String = "",
+    val routeMarkerValid: Boolean = false,
     val maxSimilarity: Float = 0f,
     val secondSimilarity: Float = 0f,
     val meanTop5Similarity: Float = 0f,
@@ -72,12 +72,12 @@ object EdgeTutorValidationSuite {
 }
 
 fun List<ValidationResult>.toCsv(): String = buildString {
-    appendLine("case_id,category,policy,route,route_reason,max_similarity,second_similarity,mean_top5_similarity,mean_top5_threshold,question,answer,sources,prompt_chars,prompt_tokens,prefill_us,decode_us,visible_ttft_ms,total_ms,available_memory_mb,is_general,error,correctness_0_2,grounding_0_2,relevance_0_2,clarity_0_2")
+    appendLine("case_id,category,policy,answer_route,route_reason,route_marker_valid,max_similarity,second_similarity,mean_top5_similarity,question,answer,sources,prompt_chars,prompt_tokens,prefill_us,decode_us,visible_ttft_ms,total_ms,available_memory_mb,is_general,error,correctness_0_2,grounding_0_2,relevance_0_2,clarity_0_2")
     for (r in this@toCsv) {
         appendLine(listOf(
-            r.caseId, r.category, r.policyId, r.route, r.routeReason, r.maxSimilarity,
-            r.secondSimilarity, r.meanTop5Similarity,
-            QueryRoutingPolicy.MIN_MEAN_TOP5_SIMILARITY, r.question, r.answer,
+            r.caseId, r.category, r.policyId, r.route, r.routeReason,
+            r.routeMarkerValid, r.maxSimilarity, r.secondSimilarity,
+            r.meanTop5Similarity, r.question, r.answer,
             r.sources.joinToString(" | "), r.promptChars, r.promptTokens, r.prefillUs,
             r.decodeUs, r.visibleTtftMs, r.totalMs, r.availableMemoryMb,
             r.isGeneralAnswer, r.error, "", "", "", "",
@@ -90,10 +90,10 @@ fun List<ValidationResult>.toMarkdown(): String = buildString {
     appendLine()
     appendLine("Complete the four 0-2 rubric columns after reviewing each answer.")
     appendLine()
-    appendLine("| Case | Category | Policy | Route | Top-1 | Top-2 | Mean top-5 | TTFT ms | Total ms | General | Sources | C | G | R | Cl |")
-    appendLine("|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|")
+    appendLine("| Case | Category | Policy | Route | Marker valid | Top-1 | Top-2 | Mean top-5 | TTFT ms | Total ms | General | Sources | C | G | R | Cl |")
+    appendLine("|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|")
     for (r in this@toMarkdown) {
-        appendLine("| ${r.caseId} | ${r.category} | ${r.policyId} | ${r.route} | ${"%.4f".format(r.maxSimilarity)} | ${"%.4f".format(r.secondSimilarity)} | ${"%.4f".format(r.meanTop5Similarity)} | ${r.visibleTtftMs} | ${r.totalMs} | ${r.isGeneralAnswer} | ${r.sources.size} |  |  |  |  |")
+        appendLine("| ${r.caseId} | ${r.category} | ${r.policyId} | ${r.route} | ${r.routeMarkerValid} | ${"%.4f".format(r.maxSimilarity)} | ${"%.4f".format(r.secondSimilarity)} | ${"%.4f".format(r.meanTop5Similarity)} | ${r.visibleTtftMs} | ${r.totalMs} | ${r.isGeneralAnswer} | ${r.sources.size} |  |  |  |  |")
         appendLine()
         appendLine("**Question:** ${r.question}")
         appendLine()

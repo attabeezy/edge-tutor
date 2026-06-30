@@ -106,20 +106,23 @@ class MnnEngine(private val context: Context) : LlmEngine, ChatSessionEngine {
         return MnnModelManager.internalModelDir(context)  // default; initNativeModel will throw a clear error
     }
 
-    override suspend fun copyModelIfNeeded() = copyMutex.withLock {
+    override suspend fun copyModelIfNeeded(
+        onProgress: (ModelReadinessState) -> Unit,
+    ): ModelReadinessState = copyMutex.withLock {
         withContext(Dispatchers.IO) {
-            val modelDir = MnnModelManager.resolveReadyModelDir(context)
-            if (modelDir != null) {
-                EdgeTutorPerf.log("llm_asset_check", "status" to "hit", "model_dir" to modelDir.absolutePath)
-                return@withContext
+            val existingModelDir = MnnModelManager.resolveReadyModelDir(context)
+            val state = if (existingModelDir != null) {
+                MnnModelManager.validateModelDir(existingModelDir)
+            } else {
+                MnnModelManager.installBundledModelIfNeeded(context, onProgress)
             }
-            val state = MnnModelManager.validate(context)
             EdgeTutorPerf.log(
                 "llm_asset_check",
-                "status" to state.kind,
+                "status" to if (existingModelDir != null) "hit" else state.kind,
                 "model_dir" to (state.modelDir ?: ""),
                 "missing" to state.missingFiles.joinToString(","),
             )
+            state
         }
     }
 

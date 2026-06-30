@@ -66,6 +66,7 @@ data class QueryExecutionResult(
     val availableMemoryMb: Long,
     val route: QueryRoute,
     val routeReason: String,
+    val routeMarkerValid: Boolean,
     val maxSimilarity: Float,
     val secondSimilarity: Float,
     val meanTop5Similarity: Float,
@@ -80,14 +81,10 @@ sealed class ThinkingUiState {
 }
 
 /**
- * Chat ViewModel for the MNN-LLM variant.
+ * Product Chat ViewModel for the MNN-LLM application.
  *
- * The only difference from android-ltk's ChatViewModel is the [llm] binding:
- *   - android-ltk  → LlamaEngine  (Llamatik / llama.cpp / GGUF)
- *   - android-mnn  → MnnEngine    (MNN-LLM / .mnn weights)
- *
- * All retrieval, prompt-budgeting, perf logging, and streaming logic is
- * identical so device measurements are directly comparable.
+ * Owns retrieval, model-routed prompting, source attribution, performance
+ * logging, and streamed UI updates.
  */
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val db = AppDatabase.get(app)
@@ -104,10 +101,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         // Start native init immediately so it is hidden behind the document-picker.
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                refreshModelReadiness()
-                if (_modelReadiness.value.isReady) {
-                    llm.copyModelIfNeeded()
+                val state = llm.copyModelIfNeeded { progress ->
+                    _modelReadiness.value = progress
+                }
+                _modelReadiness.value = state
+                if (state.isReady) {
                     llm.initNativeModel()
+                } else {
+                    _errorMessage.value =
+                        "Bundled model installation failed: ${state.message ?: "unknown error"}. " +
+                            "You can import the model folder manually in Settings."
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "Model unavailable: ${e.message}"
@@ -219,6 +222,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val session = db.chatSessionDao().latestForDocument(doc.id) ?: createSessionFor(doc.id)
             _activeSessionId.value = session.id
             _messages.value = db.messageDao().getForSession(session.id).map(::toChatMessage)
+        }
+    }
+
+    fun clearDocument() {
+        if (_isGenerating.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            mnnEngine.reset()
+            index = null
+            activeDoc = null
+            _activeDocumentId.value = null
+            _activeSessionId.value = null
+            _messages.value = emptyList()
+            _thinkingUiState.value = ThinkingUiState.Idle
         }
     }
 
@@ -388,7 +404,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val docId           = activeDoc?.id ?: -1L
             val thinkingEnabled = _thinkingEnabled.value
             var shouldPersistThinkingDuration = false
-            var activeRouteDecision: QueryRouteDecision? = null
+            var activeRoute: QueryRoute? = null
+            var activeRouteReason = "not_available"
             _thinkingUiState.value = ThinkingUiState.Active
             val priorMessages = _messages.value
             val sessionId = _activeSessionId.value
@@ -465,33 +482,24 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val sanitizedQuestion = PromptSanitizer.sanitize(effectiveQuestion)
                 val rawContextText    = contextSelection.keptChunks.joinToString("\n\n") { (_, chunk) -> chunk }
                 val sanitizedContext  = PromptSanitizer.sanitize(rawContextText)
-                val routeDecision = QueryRoutingPolicy.decide(
-                    contextSelection.keptScores + contextSelection.droppedScores,
+                val prompt = buildRoutedPrompt(
+                    passages = sanitizedContext.value,
+                    conversationContext = PromptSanitizer.sanitize(conversationContext).value,
+                    question = sanitizedQuestion.value,
+                    wantsWorkedExample = wantsWorkedExample(effectiveQuestion),
                 )
-                activeRouteDecision = routeDecision
-                val isDocumentSupported = routeDecision.route == QueryRoute.GROUNDED
-                val prompt = if (isDocumentSupported) {
-                    buildGroundedPrompt(
-                        passages             = sanitizedContext.value,
-                        conversationContext  = PromptSanitizer.sanitize(conversationContext).value,
-                        question             = sanitizedQuestion.value,
-                        wantsWorkedExample   = wantsWorkedExample(effectiveQuestion),
-                    )
-                } else {
-                    buildGeneralPrompt(sanitizedQuestion.value)
-                }
                 val sanitizedPrompt = PromptSanitizer.sanitize(prompt)
                 val promptBuildMs   = EdgeTutorPerf.elapsedMs(promptBuildStartNs)
                 EdgeTutorPerf.log("query_stage_timing", "doc_id" to docId, "prompt_build_ms" to promptBuildMs)
                 EdgeTutorPerf.log(
                     "query_route",
                     "doc_id"       to docId,
-                    "query_route"  to routeDecision.route.name,
-                    "route_reason" to routeDecision.reason,
+                    "answer_route" to "PENDING_MODEL_MARKER",
                     "max_sim"      to contextSelection.maxSimilarity,
-                    "second_sim" to routeDecision.secondSimilarity,
-                    "mean_top5_sim" to routeDecision.meanTop5Similarity,
-                    "mean_top5_threshold" to QueryRoutingPolicy.MIN_MEAN_TOP5_SIMILARITY,
+                    "second_sim" to contextSelection.droppedScores.firstOrNull(),
+                    "mean_top5_sim" to (
+                        contextSelection.keptScores + contextSelection.droppedScores
+                    ).take(5).average(),
                 )
                 EdgeTutorPerf.log(
                     "prompt_metrics",
@@ -506,22 +514,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     "final_context_chars"       to contextSelection.finalContextChars,
                     "prompt_chars"              to sanitizedPrompt.value.length,
                     "estimated_prompt_tokens"   to estimatePromptTokens(sanitizedPrompt.value),
-                    "query_route"               to routeDecision.route.name,
-                    "route_reason"              to routeDecision.reason,
-                    "second_sim"                to routeDecision.secondSimilarity,
-                    "mean_top5_sim"             to routeDecision.meanTop5Similarity,
-                    "mean_top5_threshold"       to QueryRoutingPolicy.MIN_MEAN_TOP5_SIMILARITY,
+                    "answer_route"              to "PENDING_MODEL_MARKER",
                 )
 
                 // 4. Add placeholder ASSISTANT message; stream tokens into it.
                 _messages.value += ChatMessage(
                     role    = Role.ASSISTANT,
                     text    = "",
-                    sources = if (isDocumentSupported) {
-                        contextSelection.keptChunks.map { (_, chunk) -> chunk.take(120) + "." }
-                    } else {
-                        emptyList()
-                    },
+                    sources = emptyList(),
                 )
                 val assistantId = db.messageDao().insert(
                     MessageEntity(
@@ -536,6 +536,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 _messages.value = _messages.value.dropLast(1) + _messages.value.last().copy(id = assistantId)
 
+                val sourceExcerpts =
+                    contextSelection.keptChunks.map { (_, chunk) -> chunk.take(120) + "." }
+                val routeParser = AnswerRouteParser()
                 val tokenBuf = StringBuilder()
                 var firstTokenFlushed = false
                 var uiVisibleTtftLogged = false
@@ -556,6 +559,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                             "ui_visible_ttft_ms" to EdgeTutorPerf.elapsedMs(queryStartNs),
                             "source"             to source,
                         )
+                    }
+                }
+                fun applyResolvedRoute() {
+                    val route = routeParser.route ?: return
+                    activeRoute = route
+                    activeRouteReason =
+                        if (routeParser.markerValid) "model_route_marker"
+                        else "invalid_or_missing_route_marker"
+                    val list = _messages.value.toMutableList()
+                    val last = list.lastOrNull() ?: return
+                    if (last.role == Role.ASSISTANT) {
+                        list[list.lastIndex] = last.copy(
+                            sources = if (route == QueryRoute.TEXTBOOK) sourceExcerpts else emptyList(),
+                        )
+                        _messages.value = list
                     }
                 }
                 var flushJob: Job? = viewModelScope.launch(Dispatchers.Main) {
@@ -583,14 +601,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         "${sanitizedPrompt.value}\n<img>$imagePath</img>"
                     } else sanitizedPrompt.value
                     val generation = llm.generateMeasured(inferencePrompt) { token ->
+                        val parsed = routeParser.consume(token)
+                        if (parsed.routeResolvedNow) applyResolvedRoute()
+                        if (parsed.visibleText.isEmpty()) return@generateMeasured
                         val immediateChunk = synchronized(tokenBuf) {
-                            if (!firstTokenFlushed && token.isNotBlank()) {
+                            if (!firstTokenFlushed && parsed.visibleText.isNotBlank()) {
                                 firstTokenFlushed = true
-                                val chunk = tokenBuf.toString() + token
+                                val chunk = tokenBuf.toString() + parsed.visibleText
                                 tokenBuf.clear()
                                 chunk
                             } else {
-                                tokenBuf.append(token)
+                                tokenBuf.append(parsed.visibleText)
                                 null
                             }
                         }
@@ -598,15 +619,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                             flushAssistantChunk(immediateChunk, "first_token_flush")
                         }
                     }
-                    if (!isDocumentSupported ||
-                        AnswerAttributionPolicy.isGeneralKnowledgeAnswer(generation.text)
-                    ) {
-                        val list = _messages.value.toMutableList()
-                        val last = list.lastOrNull()
-                        if (last?.role == Role.ASSISTANT) {
-                            list[list.lastIndex] = last.copy(sources = emptyList())
-                            _messages.value = list
-                        }
+                    val finalRouteChunk = routeParser.finish()
+                    if (finalRouteChunk.routeResolvedNow) applyResolvedRoute()
+                    synchronized(tokenBuf) { tokenBuf.append(finalRouteChunk.visibleText) }
+                    val finalVisibleChunk = synchronized(tokenBuf) {
+                        val chunk = tokenBuf.toString()
+                        tokenBuf.clear()
+                        chunk
+                    }
+                    if (finalVisibleChunk.isNotEmpty()) {
+                        flushAssistantChunk(finalVisibleChunk, "route_final_flush")
                     }
                     val assistant = _messages.value.lastOrNull { it.role == Role.ASSISTANT }
                     if (assistant != null && generation.thinking.isNotBlank()) {
@@ -616,11 +638,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     lastQueryResult = QueryExecutionResult(
                         policyId = promptBudgetPolicy.id,
                         question = effectiveQuestion,
-                        answer = if (isDocumentSupported) {
-                            generation.text
-                        } else {
-                            "${AnswerAttributionPolicy.GENERAL_ANSWER_PREFIX} ${generation.text}"
-                        },
+                        answer = assistant?.text.orEmpty(),
                         sources = assistant?.sources.orEmpty(),
                         promptChars = sanitizedPrompt.value.length,
                         promptTokens = generation.metrics.promptTokens,
@@ -629,21 +647,24 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         visibleTtftMs = uiVisibleTtftMs,
                         totalMs = EdgeTutorPerf.elapsedMs(queryStartNs),
                         availableMemoryMb = getAvailableMemoryMB(),
-                        route = routeDecision.route,
-                        routeReason = routeDecision.reason,
-                        maxSimilarity = routeDecision.maxSimilarity,
-                        secondSimilarity = routeDecision.secondSimilarity,
-                        meanTop5Similarity = routeDecision.meanTop5Similarity,
+                        route = routeParser.route ?: QueryRoute.FALLBACK_GENERAL,
+                        routeReason = activeRouteReason,
+                        routeMarkerValid = routeParser.markerValid,
+                        maxSimilarity = contextSelection.maxSimilarity,
+                        secondSimilarity = (
+                            contextSelection.keptScores + contextSelection.droppedScores
+                        ).getOrNull(1) ?: Float.NEGATIVE_INFINITY,
+                        meanTop5Similarity = (
+                            contextSelection.keptScores + contextSelection.droppedScores
+                        ).take(5).average().toFloat(),
                     )
                     EdgeTutorPerf.log(
                         "query_complete",
                         "doc_id" to docId,
-                        "query_route" to routeDecision.route.name,
-                        "route_reason" to routeDecision.reason,
-                        "max_sim" to routeDecision.maxSimilarity,
-                        "second_sim" to routeDecision.secondSimilarity,
-                        "mean_top5_sim" to routeDecision.meanTop5Similarity,
-                        "mean_top5_threshold" to QueryRoutingPolicy.MIN_MEAN_TOP5_SIMILARITY,
+                        "answer_route" to (routeParser.route?.name ?: "FALLBACK_GENERAL"),
+                        "route_reason" to activeRouteReason,
+                        "route_marker_valid" to routeParser.markerValid,
+                        "max_sim" to contextSelection.maxSimilarity,
                         "ui_visible_ttft_ms" to uiVisibleTtftMs,
                         "total_answer_ms" to EdgeTutorPerf.elapsedMs(queryStartNs),
                         "prompt_tokens" to generation.metrics.promptTokens,
@@ -711,8 +732,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 EdgeTutorPerf.log(
                     "query_failed",
                     "doc_id" to docId,
-                    "query_route" to (activeRouteDecision?.route?.name ?: "UNDECIDED"),
-                    "route_reason" to (activeRouteDecision?.reason ?: "not_available"),
+                    "answer_route" to (activeRoute?.name ?: "UNDECIDED"),
+                    "route_reason" to activeRouteReason,
                     "elapsed_ms" to EdgeTutorPerf.elapsedMs(queryStartNs),
                     "error_type" to e.javaClass.simpleName,
                     "error_message" to (e.message ?: ""),
@@ -763,6 +784,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         availableMemoryMb = query.availableMemoryMb,
                         route = query.route,
                         routeReason = query.routeReason,
+                        routeMarkerValid = query.routeMarkerValid,
                         maxSimilarity = query.maxSimilarity,
                         secondSimilarity = query.secondSimilarity,
                         meanTop5Similarity = query.meanTop5Similarity,
@@ -833,6 +855,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 availableMemoryMb = query.availableMemoryMb,
                                 route = query.route,
                                 routeReason = query.routeReason,
+                                routeMarkerValid = query.routeMarkerValid,
                                 maxSimilarity = query.maxSimilarity,
                                 secondSimilarity = query.secondSimilarity,
                                 meanTop5Similarity = query.meanTop5Similarity,
@@ -916,7 +939,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun buildRetrievalQuestion(question: String, priorMessages: List<ChatMessage>): String {
         if (!isFollowUpQuestion(question)) return question
+        val groundedAssistantIndex = priorMessages.indexOfLast {
+            it.role == Role.ASSISTANT && it.sources.isNotEmpty()
+        }
+        if (groundedAssistantIndex < 1) return question
         val previousUserQuestion = priorMessages
+            .subList(0, groundedAssistantIndex)
             .lastOrNull { it.role == Role.USER }
             ?.text
             ?.take(MAX_FOLLOWUP_CONTEXT_CHARS)
@@ -925,10 +953,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun buildConversationContext(priorMessages: List<ChatMessage>): String {
-        val lastUser      = priorMessages.lastOrNull { it.role == Role.USER } ?: return ""
-        val lastAssistant = priorMessages.lastOrNull { it.role == Role.ASSISTANT }
+        val groundedAssistantIndex = priorMessages.indexOfLast {
+            it.role == Role.ASSISTANT && it.sources.isNotEmpty()
+        }
+        if (groundedAssistantIndex < 1) return ""
+        val lastAssistant = priorMessages[groundedAssistantIndex]
+        val lastUser = priorMessages
+            .subList(0, groundedAssistantIndex)
+            .lastOrNull { it.role == Role.USER }
+            ?: return ""
         val sb = StringBuilder("Previous question: ${lastUser.text.take(MAX_FOLLOWUP_CONTEXT_CHARS)}")
-        if (lastAssistant != null && lastAssistant.text.isNotBlank()) {
+        if (lastAssistant.text.isNotBlank()) {
             sb.append("\nPrevious answer: ${lastAssistant.text.take(MAX_ANSWER_CONTEXT_CHARS)}")
         }
         return sb.toString()
@@ -977,33 +1012,34 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     // Prompt template
     // -------------------------------------------------------------------------
 
-    private fun buildGroundedPrompt(
+    private fun buildRoutedPrompt(
         passages: String,
         conversationContext: String,
         question: String,
         wantsWorkedExample: Boolean,
     ): String = """
+Decide whether the textbook passage directly supports answering the question.
+Your first output must be exactly one route marker:
+- [TEXTBOOK] if the passage supports the answer. Answer using the passage.
+- [GENERAL] if it does not. Answer from general knowledge.
+Never output both markers. Put the answer immediately after the marker.
+
+TEXTBOOK PASSAGE:
 $passages
 
-$conversationContext
+${if (conversationContext.isBlank()) "" else "PREVIOUS GROUNDED EXCHANGE:\n$conversationContext\n"}
 
 ${answerInstruction(wantsWorkedExample)}
 Question: $question
 """.trimIndent()
 
-    private fun buildGeneralPrompt(question: String): String =
-        "Answer this question from general knowledge. Be concise and factual. " +
-            "Write the answer as plain Markdown prose. Only put actual mathematical " +
-            "formulas in LaTeX (inline \$...\$ or display \$\$...\$\$); never wrap " +
-            "ordinary words or whole sentences in math delimiters.\nQuestion: $question"
-
     private fun answerInstruction(wantsWorkedExample: Boolean): String =
         if (wantsWorkedExample) {
-            "Use the passages. Give a small worked example. Show the derivative, integrate it back, and check the result. " +
+            "If answering from the textbook, give a small worked example when the passage supports it. " +
                 "Write the answer as plain Markdown prose. Only put actual mathematical formulas in LaTeX " +
                 "(inline \$...\$ or display \$\$...\$\$); never wrap ordinary words or whole sentences in math delimiters."
         } else {
-            "Answer using the passages. Be direct and explain the relationship. " +
+            "Be direct and explain the relationship. " +
                 "Write the answer as plain Markdown prose. Only put actual mathematical formulas in LaTeX " +
                 "(inline \$...\$ or display \$\$...\$\$); never wrap ordinary words or whole sentences in math delimiters."
         }
