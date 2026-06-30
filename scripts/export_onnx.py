@@ -35,7 +35,7 @@ from transformers import AutoModel, AutoTokenizer
 PROJECT_ROOT = Path(__file__).parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
 ASSETS_DIRS = [
-    PROJECT_ROOT / "android-ltk" / "app" / "src" / "main" / "assets",
+    PROJECT_ROOT / "android-mnn" / "app" / "src" / "main" / "assets",
 ]
 ONNX_PATH = MODELS_DIR / "arctic.onnx"
 VOCAB_PATH = MODELS_DIR / "vocab.txt"
@@ -231,4 +231,4 @@ for assets_dir in ASSETS_DIRS:
         print(f"  {src.name} -> {dst}")
 
 print("\nAll done.")
-print("Next: open android-ltk/ in Android Studio and run Gradle sync.")
+print("Next: open android-mnn/ in Android Studio and run Gradle sync.")
