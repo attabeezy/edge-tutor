@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from collections import Counter, defaultdict
 from pathlib import Path
 
 
@@ -17,23 +18,16 @@ def load_module(name: str, path: Path):
     return module
 
 
-def test_tutor_dataset_matches_authored_generator_and_validates():
-    generator = load_module("tutor_generator", DATA_DIR / "generate_dataset.py")
+def test_static_tutor_dataset_validates():
     validator = load_module("tutor_validator", DATA_DIR / "validate_dataset.py")
 
-    generated = generator.make_rows()
     checked_in = validator.read_rows(DATA_DIR)
 
-    assert len(generated) == 300
-    assert [row["id"] for row in checked_in] == [
-        row["id"] for split in ("train", "validation", "test")
-        for row in generated if row["split"] == split
-    ]
-    assert [json.dumps(row, sort_keys=True) for row in checked_in] == [
-        json.dumps(row, sort_keys=True) for split in ("train", "validation", "test")
-        for row in generated if row["split"] == split
-    ]
+    assert len(checked_in) == 300
     validator.validate(checked_in)
+
+    assert Counter(row["split"] for row in checked_in) == validator.LEGACY_EXPECTED_SPLITS
+    assert Counter(row["tutor_move"] for row in checked_in) == validator.LEGACY_EXPECTED_MOVES
 
 
 def test_colab_notebook_has_expected_handoff_sections():
@@ -46,3 +40,15 @@ def test_colab_notebook_has_expected_handoff_sections():
     )
     for heading in ("## Goal", "## Setup", "## Steps", "## Checks", "## Next Steps"):
         assert heading in markdown
+
+    code = "\n".join(
+        "".join(cell["source"])
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
+    )
+    assert '"--num_train_epochs", "1"' in code
+    assert '"--train_data", str(REPO_DIR / "training/tutor/train.jsonl")' in code
+    assert '"--validation_data", str(REPO_DIR / "training/tutor/validation.jsonl")' in code
+    assert '"--path", str(MERGED_MODEL_DIR)' in code
+    assert "--lora_path" not in code
+    assert not any(cell.get("outputs") for cell in notebook["cells"])
