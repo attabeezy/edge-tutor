@@ -117,9 +117,13 @@ class IngestViewModel(app: Application) : AndroidViewModel(app) {
                     setProgress(docId, IngestionProgress("Extracting", window.startPage, window.totalPages))
 
                     val chunks = TextChunker.chunk(window.text)
+                    val windowEndPage = minOf(window.startPage + pageWindow - 1, window.totalPages)
                     chunks.chunked(embedBatch).forEach { batch ->
                         ensureActive()
-                        setProgress(docId, IngestionProgress("Embedding", globalChunkIdx, -1))
+                        setProgress(
+                            docId,
+                            IngestionProgress("Embedding pages", windowEndPage, window.totalPages),
+                        )
 
                         val vectors = EdgeTutorPerf.trace(
                             "embed_batch",
