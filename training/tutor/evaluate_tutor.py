@@ -21,23 +21,54 @@ def clean_output(text: str) -> str:
 
 
 def automatic_scores(item: dict, answer: str) -> dict[str, bool]:
-    route_marker = f"[{item['route']}]"
     evaluation = item["evaluation"]
-    marker_valid = answer.startswith(route_marker) and (
-        answer.count("[TEXTBOOK]") + answer.count("[GENERAL]") == 1
+    normalized = answer.lower()
+    legacy = "route" in item
+    forbidden = evaluation.get(
+        "forbidden_answer_fragments", evaluation.get("must_not_include", [])
     )
+    required = evaluation.get("required_facts", evaluation.get("must_include", []))
     no_forbidden_answer = all(
-        fragment.lower() not in answer.lower()
-        for fragment in evaluation.get("must_not_include", [])
+        fragment.lower() not in normalized
+        for fragment in forbidden
     )
     required_content = all(
-        fragment.lower() in answer.lower()
-        for fragment in evaluation.get("must_include", [])
+        fragment.lower() in normalized
+        for fragment in required
     )
+    user = item["messages"][1]["content"]
+    if legacy:
+        marker = f"[{item['route']}]"
+        route_marker_valid = answer.startswith(marker + "\n") and sum(
+            answer.count(candidate) for candidate in ("[TEXTBOOK]", "[GENERAL]")
+        ) == 1
+        passage = user.partition("TEXTBOOK PASSAGE:\n")[2].split("\n\n", 1)[0]
+    else:
+        route_marker_valid = not any(
+            marker in answer for marker in ("[TEXTBOOK]", "[GENERAL]")
+        )
+        passage = user.split("\n\n", 1)[0].removeprefix("Textbook passage:\n")
+    stopwords = {"about", "because", "which", "their", "there", "these", "those", "would", "could"}
+    passage_terms = {
+        word.lower().strip(".,:;!?()") for word in passage.split()
+        if len(word) >= 5 and word.lower().strip(".,:;!?()") not in stopwords
+    }
+    answer_terms = {word.strip(".,:;!?()") for word in normalized.split()}
+    knowledge_mode = item.get("knowledge_mode", item.get("route", "").lower())
+    grounded = route_marker_valid if legacy else (
+        knowledge_mode != "grounded" or len(passage_terms & answer_terms) >= 2
+    )
+    meaningful = len(answer.split()) >= 5
+    malformed = not answer.strip() or not route_marker_valid
     return {
-        "route_marker_valid": marker_valid,
+        "route_marker_valid": route_marker_valid,
         "no_premature_answer": no_forbidden_answer,
         "required_content_present": required_content,
+        "correctness_fragments": required_content,
+        "no_forbidden_leakage": no_forbidden_answer,
+        "groundedness": grounded,
+        "instruction_adaptation": required_content and no_forbidden_answer,
+        "response_complete": meaningful and not malformed and answer.rstrip().endswith(("?", ".", "!")),
         "one_guiding_question": answer.count("?") == 1,
         "within_120_words": len(answer.split()) <= 120,
     }
@@ -112,7 +143,7 @@ def main() -> None:
             "id": item["id"],
             "subject": item["subject"],
             "level": item["level"],
-            "route": item["route"],
+            "knowledge_mode": item.get("knowledge_mode", item.get("route", "").lower()),
             "tutor_move": item["tutor_move"],
             **scores,
             "answer": answer,
@@ -133,7 +164,9 @@ def main() -> None:
     print(f"wrote {len(results)} results to {args.output}")
     for key in (
         "route_marker_valid", "no_premature_answer", "required_content_present",
-        "one_guiding_question", "within_120_words",
+        "correctness_fragments", "no_forbidden_leakage", "groundedness",
+        "instruction_adaptation", "response_complete", "one_guiding_question",
+        "within_120_words",
     ):
         passed = sum(bool(result[key]) for result in results)
         print(f"{key}: {passed}/{len(results)}")
