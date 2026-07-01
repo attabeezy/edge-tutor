@@ -47,7 +47,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingCameraFile: File? = null
     private var modelReady = false
     private var generating = false
-    private var currentScreen = AppScreen.CHAT
+    private var currentScreen = AppScreen.LIBRARY
     private var currentDocumentTitle = "EdgeTutor"
     private var currentDocumentStatus = ""
 
@@ -86,7 +86,7 @@ class MainActivity : AppCompatActivity() {
         setupLibrary()
         setupHistoryDrawer()
         bindActions()
-        showScreen(AppScreen.CHAT)
+        showScreen(AppScreen.LIBRARY)
         collectState()
         handleDebugIntent(intent)
     }
@@ -285,6 +285,12 @@ class MainActivity : AppCompatActivity() {
                         val doc = docs.firstOrNull { it.id == state.selectedDocumentId }
                             ?: docs.firstOrNull { it.status == IngestionStatus.DONE }
                             ?: docs.firstOrNull()
+                        val ingestionDoc = docs.firstOrNull {
+                            it.status == IngestionStatus.RUNNING ||
+                                it.status == IngestionStatus.PENDING ||
+                                it.status == IngestionStatus.ERROR
+                        }
+                        val readyDocs = docs.filter { it.status == IngestionStatus.DONE }
                         if (doc != null && state.selectedDocumentId != doc.id) {
                             ingestVm.selectDocument(doc.id)
                         }
@@ -305,33 +311,28 @@ class MainActivity : AppCompatActivity() {
                             binding.toolbarTitle.text = doc?.displayName ?: "EdgeTutor"
                             binding.toolbarStatus.text = status
                         }
-                        binding.libraryDocumentName.text = doc?.displayName ?: "No textbook added"
+                        binding.libraryDocumentName.text = ingestionDoc?.displayName ?: "No source being added"
                         binding.libraryDocumentStatus.text = when {
-                            doc == null -> "Choose a PDF or text file to begin."
-                            doc.status == IngestionStatus.RUNNING -> status
-                            doc.status == IngestionStatus.DONE ->
-                                "${doc.pageCount} pages · ${doc.chunkCount} RAG chunks · index ready"
-                            doc.status == IngestionStatus.ERROR -> status
-                            else -> status
+                            ingestionDoc == null -> "Choose a PDF or text file to begin."
+                            ingestionDoc.status == IngestionStatus.RUNNING ->
+                                progress[ingestionDoc.id]?.let { "${it.phase} ${it.current}/${it.total}" }
+                                    ?: "Building RAG index"
+                            ingestionDoc.status == IngestionStatus.ERROR ->
+                                ingestionDoc.errorMessage ?: "Indexing failed"
+                            else -> "Waiting to index"
                         }
-                        binding.libraryProgress.isVisible = doc?.status == IngestionStatus.RUNNING
-                        binding.libraryEmpty.isVisible = docs.isEmpty()
+                        binding.libraryProgress.isVisible =
+                            ingestionDoc?.status == IngestionStatus.RUNNING
+                        binding.libraryEmpty.isVisible = readyDocs.isEmpty()
                         documentAdapter.submitList(
-                            docs.map { item ->
-                                val itemStatus = when (item.status) {
-                                    IngestionStatus.RUNNING ->
-                                        progress[item.id]?.let { "${it.phase} ${it.current}/${it.total}" }
-                                            ?: "Building RAG index"
-                                    IngestionStatus.DONE ->
-                                        "${item.pageCount} pages · ${item.chunkCount} chunks · ready"
-                                    IngestionStatus.ERROR -> item.errorMessage ?: "Indexing failed"
-                                    IngestionStatus.PENDING -> "Waiting to index"
-                                }
+                            readyDocs.map { item ->
+                                val itemStatus =
+                                    "${item.pageCount} pages · ${item.chunkCount} chunks · ready"
                                 LibraryDocumentItem(item, itemStatus, item.id == doc?.id)
                             },
                         )
                         binding.libraryAddTextbook.isEnabled = model.isReady &&
-                            doc?.status != IngestionStatus.RUNNING && !generating
+                            ingestionDoc?.status != IngestionStatus.RUNNING && !generating
                         binding.settingsModelStatus.text =
                             if (model.isReady) "Qwen model ready" else model.message ?: "Qwen model not imported"
                         binding.settingsImportModel.isVisible = !model.isReady

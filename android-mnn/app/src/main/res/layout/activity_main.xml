@@ -217,7 +217,7 @@
                     android:contentDescription="Send"
                     android:padding="10dp"
                     android:src="@drawable/ic_send"
-                    android:tint="#FFFFFF"/>
+                    app:tint="#FFFFFF"/>
             </LinearLayout>
 
             <LinearLayout
@@ -361,9 +361,11 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="18dp"
-                        android:text="Add textbook"
+                        android:text="Add source"
+                        android:textColor="#FFFFFF"
                         android:textAllCaps="false"
-                        app:icon="@drawable/ic_book"/>
+                        app:icon="@drawable/ic_book"
+                        app:iconTint="#FFFFFF"/>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
