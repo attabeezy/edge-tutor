@@ -1,41 +1,41 @@
 # EdgeTutor Tutor Fine-Tuning
 
-This directory contains the authored MVP dataset and the reproducible Qwen3.5-0.8B tutoring workflow. No external model or generation API was used to create the examples.
+This directory contains the 300-row English tutoring dataset and the
+Qwen3.5-0.8B Colab training workflow.
 
 ## Dataset
-
-The dataset has 300 rows:
 
 - `train.jsonl`: 240 rows
 - `validation.jsonl`: 30 rows
 - `test.jsonl`: 30 held-out rows
 
-It contains 75 examples for each of math, science, English/language arts, and social studies. Each of 60 concepts has five tutoring moves: diagnostic question, initial hint, conceptual explanation, corrective feedback, and a complete answer after an attempt or explicit request. Three moves use `[TEXTBOOK]` and two use `[GENERAL]`, for a 180/120 route split.
+The dataset covers 60 concepts across math, science, English, and social
+studies. Each concept has five tutoring moves: diagnostic feedback, an initial
+hint, a concept explanation, corrective feedback, and a complete answer after
+the learner requests it.
 
-Each JSONL row contains `messages` for SFT plus metadata used by validation and evaluation. Concepts never cross data splits.
-
-Regenerate and validate from the repository root:
+The JSONL files are the source of truth. Validate them from the repository root:
 
 ```powershell
-python training/tutor/generate_dataset.py
 python training/tutor/validate_dataset.py
 ```
 
 ## Train and export
 
-Open `colab_qwen35_tutor.ipynb` in a free GPU Colab runtime. It:
+Open `colab_qwen35_tutor.ipynb` in a GPU Colab runtime. It:
 
-1. validates the dataset;
+1. validates the checked-in dataset;
 2. downloads `Qwen/Qwen3.5-0.8B`;
-3. trains an MNN HQQ-aware QLoRA adapter;
-4. compares base and adapter on the held-out split;
-5. exports a merged 4-bit HQQ MNN model.
+3. trains one epoch of HQQ-aware QLoRA;
+4. evaluates the base, adapter, and merged models;
+5. exports a standalone 4-bit HQQ MNN model.
 
-The quantization parameters match the currently bundled model: HQQ, 4-bit weights, block size 64, 4-bit LM head, and 16-bit scales. The merged export is a drop-in model directory; Android does not need to load a separate LoRA file.
+Training uses LoRA rank 8, alpha 16, dropout 0.05, 1,024-token sequences,
+4-bit HQQ weights, and deterministic evaluation.
 
-## Evaluate upstream
+## Evaluate locally
 
-The notebook invokes the evaluator automatically. It can also be run directly in a CUDA environment:
+In an environment with PyTorch, Transformers, and PEFT:
 
 ```powershell
 python training/tutor/evaluate_tutor.py `
@@ -45,8 +45,7 @@ python training/tutor/evaluate_tutor.py `
   --output reports/tutor-adapter.csv
 ```
 
-Automatic checks cover route markers, premature answer fragments, required answer fragments, one guiding question, and response length. The CSV leaves correctness, helpfulness, adaptation, and feedback columns blank for manual 0-2 review.
+Automatic checks cover route selection, answer leakage, required answer
+content, one guiding question, and response length. Manually compare several
+base and adapter responses before deploying the model.
 
-## Android validation
-
-The Android device suite retains the original 16 routing cases and adds 24 tutoring cases across the four subjects and six behaviors. After replacing the model, rebuild and reinstall the app or clear app data so the old private model copy is not reused.

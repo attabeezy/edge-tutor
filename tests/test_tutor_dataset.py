@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 
@@ -26,8 +26,8 @@ def test_static_tutor_dataset_validates():
     assert len(checked_in) == 300
     validator.validate(checked_in)
 
-    assert Counter(row["split"] for row in checked_in) == validator.LEGACY_EXPECTED_SPLITS
-    assert Counter(row["tutor_move"] for row in checked_in) == validator.LEGACY_EXPECTED_MOVES
+    assert Counter(row["split"] for row in checked_in) == validator.EXPECTED_SPLITS
+    assert Counter(row["tutor_move"] for row in checked_in) == validator.EXPECTED_MOVES
 
 
 def test_colab_notebook_has_expected_handoff_sections():
