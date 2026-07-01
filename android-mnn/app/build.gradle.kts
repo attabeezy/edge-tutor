@@ -117,7 +117,7 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("androidx.documentfile:documentfile:1.0.1")
 
-    // Room — document metadata DB (same schema as android-ltk)
+    // Room — document metadata DB
     val roomVersion = "2.7.0"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")

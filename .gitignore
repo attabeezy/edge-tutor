@@ -52,6 +52,7 @@ $RECYCLE.BIN/
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 .claude/
 /MNN/
+/android-ltk/
 CLAUDE.md
 PROJECT.md
 .pytest_cache/
@@ -75,9 +76,6 @@ data/raw/
 android/app/src/main/assets/*.gguf
 android/app/src/main/assets/*.onnx
 android/app/src/main/assets/*.txt
-android-ltk/app/src/main/assets/*.gguf
-android-ltk/app/src/main/assets/*.onnx
-android-ltk/app/src/main/assets/*.txt
 # android-mnn — ignore build artefacts and large binaries, track source code
 android-mnn/.gradle/
 android-mnn/build/
@@ -94,11 +92,6 @@ android-mnn/app/src/main/assets/*.weight
 android-mnn/app/src/main/assets/*.json
 android-mnn/app/src/main/assets/*.onnx
 android-mnn/app/src/main/assets/tokenizer.txt
-android-ltk/.gradle/
-android-ltk/build/
-android-ltk/app/build/
-android-ltk/local.properties
-android-ltk/.idea/
 notebooks/
 
 # Local device/UI captures. Curated product images must use a descriptive name

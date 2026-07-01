@@ -3,9 +3,7 @@ package com.edgetutor.mnn.llm
 /**
  * Sanitizes text to ASCII-safe output before sending to the native LLM.
  *
- * Identical to android-ltk's PromptSanitizer — kept as a verbatim copy so
- * the MNN variant has zero functional divergence in sanitisation logic.
- * If android-ltk's version is updated, mirror the change here.
+ * This is the single sanitizer implementation used by the Android app.
  */
 object PromptSanitizer {
 

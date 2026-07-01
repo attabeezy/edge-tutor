@@ -11,11 +11,7 @@ $forbiddenPatterns = @(
     '^android/app/build/',
     '^android/build/',
     '^android/.gradle/',
-    '^android/.idea/',
-    '^android-ltk/app/build/',
-    '^android-ltk/build/',
-    '^android-ltk/.gradle/',
-    '^android-ltk/.idea/'
+    '^android/.idea/'
 )
 
 function Get-GitLines([string]$args) {

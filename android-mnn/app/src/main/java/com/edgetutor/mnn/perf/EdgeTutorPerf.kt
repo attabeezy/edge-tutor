@@ -7,8 +7,7 @@ import android.util.Log
 /**
  * Lightweight structured performance logger.
  *
- * Identical contract to android-ltk's EdgeTutorPerf — same log tag, same
- * key/value format — so existing Logcat filters work unchanged:
+ * Stable log tag and key/value format so existing Logcat filters work unchanged:
  *
  *   adb logcat EdgeTutorPerf:D MnnEngine:D AndroidRuntime:E *:S
  */
